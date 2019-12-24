@@ -18,13 +18,19 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 
  */
 
-#define _GNU_SOURCE
+#include "config.h"
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <syslog.h>
 #include <getopt.h>
 #include <errno.h>
+
+#define DFLT_GPIO_DEVICE "gpiochip0"
+
+struct options_str {
+	const char *gpio_device;
+};
 
 /*
  * private functions
@@ -34,21 +40,23 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 static void
 print_help(void)
 {
-	printf("Usage: %s [OPTIONS]\n",
+	printf("Usage: %s [OPTION]...\n",
 		program_invocation_short_name);
 	printf("DIY thermostat, designed for Raspberry Pi or similar system\n");
 	printf("\n");
 	printf("Options:\n");
 	printf("  -h, --help:\t\tdisplay this message and exit\n");
 	printf("  -v, --version:\tdisplay the version and exit\n");
+	printf("  -g, --gpio-dvc=DVC:\tgpio device name (default: %s)\n",
+		DFLT_GPIO_DEVICE);
 }
 
-/* version */
+/* version message */
 static void
 print_version(void)
 {
 	printf("%s v%s\n",
-	       program_invocation_short_name, ""); /* FIXME */
+	       program_invocation_short_name, VERSION);
 	printf("Copyright (C) 2019 Todd Allen\n");
 	printf("License: GNU GPLv3\n");
 	printf("This is free software: you are free to change and"
@@ -57,7 +65,7 @@ print_version(void)
 }
 
 static int
-get_options(int argc, char *argv[])
+get_options(int argc, char *argv[], struct options_str *options)
 {
 	static const struct option longopts[] = {
 		{
@@ -72,10 +80,18 @@ get_options(int argc, char *argv[])
 			.flag = NULL,
 			.val = 'v',
 		},
+		{
+			.name = "gpio-dvc",
+			.has_arg = required_argument,
+			.flag = NULL,
+			.val = 'g',
+		},
 		{ NULL, 0, NULL, 0 }  /* terminate */
 	};
-	static const char *const shortopts = ":hv";
+	static const char *const shortopts = ":hvg:";
 	int optc, opti;
+
+	options->gpio_device = DFLT_GPIO_DEVICE;
 
 	for (;;) {
 		optc = getopt_long(argc, argv, shortopts, longopts, &opti);
@@ -90,6 +106,10 @@ get_options(int argc, char *argv[])
 		case 'v':
 			print_version();
 			exit(EXIT_SUCCESS);
+
+		case 'g':
+			options->gpio_device = optarg;
+			break;
 
 		case '?':
 			syslog(LOG_ERR, "unrecognized option: %c",
@@ -116,13 +136,18 @@ int
 main(int argc, char *argv[])
 {
 	int ret;
+	struct options_str options;
 
 	openlog(program_invocation_short_name, LOG_ODELAY, LOG_USER);
 	syslog(LOG_INFO, "started");
 
-	ret = get_options(argc, argv);
+	ret = get_options(argc, argv, &options);
 	if (ret == -1)
 		exit(EXIT_FAILURE);
+
+	syslog(LOG_INFO, "options:");
+	syslog(LOG_INFO, "    gpio-dvc: %s",
+	       options.gpio_device);
 
 	syslog(LOG_INFO, "exiting");
 	closelog();
