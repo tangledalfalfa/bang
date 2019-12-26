@@ -272,6 +272,8 @@ parse_options(int argc, char *argv[], struct options_str *options)
 static int
 validate_options(const struct options_str *options)
 {
+	/* known gpio offsets: 26, 20, 21 */
+
 	if (options->mcp9808_i2c_addr > 0x7F) {
 		fprintf(stderr, "%s: invalid I2C address (0x%02X)\n",
 			PGM_NAME, options->mcp9808_i2c_addr);
@@ -299,8 +301,41 @@ open_gpio_chip(const char *device_name,
 	*chip = gpiod_chip_open_by_name(device_name);
 	if (*chip == NULL) {
 		fprintf(stderr,
-			"%s, gpiod_chip_open(%s): %s\n",
+			"%s, gpiod chip open(%s): %s\n",
 			PGM_NAME, device_name, strerror(errno));
+		return -1;
+	}
+
+	return 0;
+}
+
+static int
+open_gpio_line(struct gpiod_chip *chip,
+	       unsigned offset,
+	       bool active_low,
+	       struct gpiod_line **line)
+{
+	struct gpiod_line_request_config config;
+	int ret;
+
+	*line = gpiod_chip_get_line(chip, offset);
+	if (*line == NULL) {
+		fprintf(stderr,
+			"%s, gpiod get line(%u): %s\n",
+			PGM_NAME, offset, strerror(errno));
+		return -1;
+	}
+
+	config.consumer = PGM_NAME;
+	config.request_type = GPIOD_LINE_REQUEST_DIRECTION_OUTPUT;
+	config.flags = active_low * GPIOD_LINE_REQUEST_FLAG_ACTIVE_LOW;
+
+	/* set to output, initial value 0 */
+	ret = gpiod_line_request(*line, &config, 0);
+	if (ret == -1) {
+		fprintf(stderr,
+			"%s, gpiod line request: %s\n",
+			PGM_NAME, strerror(errno));
 		return -1;
 	}
 
@@ -315,7 +350,20 @@ open_gpio(const struct options_str *options,
 	if (open_gpio_chip(options->gpio_device, chip) == -1)
 		return -1;
 
+	if (open_gpio_line(*chip, options->gpio_offset,
+			   options->gpio_active_low,
+			   line) == -1)
+		return -1;
+
 	return 0;
+}
+
+static void
+close_gpio(struct gpiod_chip *chip,
+	   struct gpiod_line *line)
+{
+	gpiod_line_release(line);
+	gpiod_chip_close(chip);
 }
 
 static void
@@ -352,6 +400,8 @@ main(int argc, char *argv[])
 	syslog(LOG_INFO, "started");
 
 	log_options(&options);
+
+	close_gpio(chip, line);
 
 	syslog(LOG_INFO, "exiting");
 	closelog();
