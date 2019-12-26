@@ -24,8 +24,10 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include <syslog.h>
 #include <getopt.h>
+#include <gpiod.h>
 #include <errno.h>
 
 #define PGM_NAME program_invocation_short_name
@@ -95,7 +97,7 @@ print_version(void)
 }
 
 static int
-get_options(int argc, char *argv[], struct options_str *options)
+parse_options(int argc, char *argv[], struct options_str *options)
 {
 	static const struct option longopts[] = {
 		{       .name = "help",
@@ -267,32 +269,92 @@ get_options(int argc, char *argv[], struct options_str *options)
 	return 0;
 }
 
+static int
+validate_options(const struct options_str *options)
+{
+	if (options->mcp9808_i2c_addr > 0x7F) {
+		fprintf(stderr, "%s: invalid I2C address (0x%02X)\n",
+			PGM_NAME, options->mcp9808_i2c_addr);
+		return -1;
+	}
+	/*
+	 * check against known addresses for MCP9808
+	 *    addresses are 0011xxx or 1001xxx
+	 */
+	if (((options->mcp9808_i2c_addr >> 3) != 0x03)
+	    && ((options->mcp9808_i2c_addr >> 3) != 0x09)) {
+		fprintf(stderr,
+			"%s: unrecognized I2C address for MCP9808 (0x%02X)\n",
+			PGM_NAME, options->mcp9808_i2c_addr);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int
+open_gpio_chip(const char *device_name,
+	struct gpiod_chip **chip)
+{
+	*chip = gpiod_chip_open_by_name(device_name);
+	if (*chip == NULL) {
+		fprintf(stderr,
+			"%s, gpiod_chip_open(%s): %s\n",
+			PGM_NAME, device_name, strerror(errno));
+		return -1;
+	}
+
+	return 0;
+}
+
+static int
+open_gpio(const struct options_str *options,
+	  struct gpiod_chip **chip,
+	  struct gpiod_line **line)
+{
+	if (open_gpio_chip(options->gpio_device, chip) == -1)
+		return -1;
+
+	return 0;
+}
+
+static void
+log_options(const struct options_str *options)
+{
+	syslog(LOG_INFO, "options:");
+	syslog(LOG_INFO, "    gpio-dvc: %s", options->gpio_device);
+	syslog(LOG_INFO, "    gpio-num: %u", options->gpio_offset);
+	syslog(LOG_INFO, "    gpio-pol: %d", !options->gpio_active_low);
+	syslog(LOG_INFO, "    i2c-dvc: %s", options->i2c_device);
+	syslog(LOG_INFO, "    i2c-addr: 0x%02X", options->mcp9808_i2c_addr);
+	syslog(LOG_INFO, "    data-dir: %s",
+	       (options->data_dir == NULL) ? "stdout" : options->data_dir);
+	syslog(LOG_INFO, "    force: %s", options->force ? "true" : "false");
+	syslog(LOG_INFO, "    test: %s", options->test ? "true" : "false");
+}
+
 /* M A I N */
 int
 main(int argc, char *argv[])
 {
-	int ret;
 	struct options_str options;
+	struct gpiod_chip *chip;
+	struct gpiod_line *line;
+
+	if ((parse_options(argc, argv, &options) == -1)
+	    || (validate_options(&options) == -1))
+		exit(EXIT_FAILURE);
+
+	if (open_gpio(&options, &chip, &line) == -1)
+		exit(EXIT_FAILURE);
 
 	openlog(program_invocation_short_name, LOG_ODELAY, LOG_USER);
 	syslog(LOG_INFO, "started");
 
-	ret = get_options(argc, argv, &options);
-	if (ret == -1)
-		exit(EXIT_FAILURE);
-
-	syslog(LOG_INFO, "options:");
-	syslog(LOG_INFO, "    gpio-dvc: %s", options.gpio_device);
-	syslog(LOG_INFO, "    gpio-num: %u", options.gpio_offset);
-	syslog(LOG_INFO, "    gpio-pol: %d", !options.gpio_active_low);
-	syslog(LOG_INFO, "    i2c-dvc: %s", options.i2c_device);
-	syslog(LOG_INFO, "    i2c-addr: 0x%02X", options.mcp9808_i2c_addr);
-	syslog(LOG_INFO, "    data-dir: %s",
-	       (options.data_dir == NULL) ? "stdout" : options.data_dir);
-	syslog(LOG_INFO, "    force: %s", options.force ? "true" : "false");
-	syslog(LOG_INFO, "    test: %s", options.test ? "true" : "false");
+	log_options(&options);
 
 	syslog(LOG_INFO, "exiting");
 	closelog();
+
 	exit(EXIT_SUCCESS);
 }
