@@ -10,6 +10,7 @@
 #include <errno.h>
 
 #include "mcp9808.h"
+#include "util.h"
 
 /*
  * public functions
