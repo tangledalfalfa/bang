@@ -405,6 +405,18 @@ open_i2c(const struct options_str *options)
 	return fd;
 }
 
+static int
+close_i2c(int i2c_fd)
+{
+	if (close(i2c_fd) == -1) {
+		syslog(LOG_ERR, "I2C close: %s",
+		       strerror(errno));
+		return -1;
+	}
+
+	return 0;
+}
+
 static void
 log_options(const struct options_str *options)
 {
@@ -443,12 +455,18 @@ main(int argc, char *argv[])
 	if (mcp9808_config(i2c_fd, options.mcp9808_i2c_addr) == -1)
 		exit(EXIT_FAILURE);
 
+	/* test communications to MCP9808 */
+	if (mcp9808_read_temp(i2c_fd, NULL, NULL) == -1) {
+		fprintf(stderr, "read temp: %s\n", strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+
 	openlog(program_invocation_short_name, LOG_ODELAY, LOG_USER);
 	syslog(LOG_INFO, "started");
 
 	log_options(&options);
 
-	close(i2c_fd);
+	close_i2c(i2c_fd);
 	close_gpio(chip, line);
 
 	syslog(LOG_INFO, "exiting");
