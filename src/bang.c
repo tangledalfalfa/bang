@@ -28,7 +28,13 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <syslog.h>
 #include <getopt.h>
 #include <gpiod.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <errno.h>
+
+#include "mcp9808.h"
 
 #define PGM_NAME program_invocation_short_name
 
@@ -294,6 +300,10 @@ validate_options(const struct options_str *options)
 	return 0;
 }
 
+/*
+ * GPIO
+ */
+
 static int
 open_gpio_chip(const char *device_name,
 	struct gpiod_chip **chip)
@@ -366,6 +376,35 @@ close_gpio(struct gpiod_chip *chip,
 	gpiod_chip_close(chip);
 }
 
+/*
+ * I2C
+ */
+static int
+open_i2c(const struct options_str *options)
+{
+	char *path;
+	int ret;
+	int fd;
+
+	ret = asprintf(&path, "/dev/%s", options->i2c_device);
+	if (ret == -1) {
+		fprintf(stderr,
+			"%s, asprintf(%s): %s\n",
+			PGM_NAME, options->i2c_device, strerror(errno));
+		return -1;
+	}
+
+	fd = open(path, O_RDWR);
+	if (fd == -1)
+		fprintf(stderr,
+			"%s, open(%s): %s\n",
+			PGM_NAME, path, strerror(errno));
+
+	free(path);
+
+	return fd;
+}
+
 static void
 log_options(const struct options_str *options)
 {
@@ -388,6 +427,7 @@ main(int argc, char *argv[])
 	struct options_str options;
 	struct gpiod_chip *chip;
 	struct gpiod_line *line;
+	int i2c_fd;
 
 	if ((parse_options(argc, argv, &options) == -1)
 	    || (validate_options(&options) == -1))
@@ -396,11 +436,19 @@ main(int argc, char *argv[])
 	if (open_gpio(&options, &chip, &line) == -1)
 		exit(EXIT_FAILURE);
 
+	i2c_fd = open_i2c(&options);
+	if (i2c_fd == -1)
+		exit(EXIT_FAILURE);
+
+	if (mcp9808_config(i2c_fd, options.mcp9808_i2c_addr) == -1)
+		exit(EXIT_FAILURE);
+
 	openlog(program_invocation_short_name, LOG_ODELAY, LOG_USER);
 	syslog(LOG_INFO, "started");
 
 	log_options(&options);
 
+	close(i2c_fd);
 	close_gpio(chip, line);
 
 	syslog(LOG_INFO, "exiting");
