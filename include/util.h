@@ -10,6 +10,18 @@
 #define MAX(a, b) (((b) > (a)) ? (b) : (a))
 #define MIN(a, b) (((b) < (a)) ? (b) : (a))
 
+/* inlines */
+
+static inline float degc_to_degf(float degc)
+{
+	return degc * 1.8f + 32.0f;
+}
+
+static inline float degf_to_degc(float degf)
+{
+	return (degf - 32.0f) / 1.8f;
+}
+
 /*
  * public function prototypes
  */
