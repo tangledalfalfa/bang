@@ -4,6 +4,12 @@
 #include <unistd.h>
 #include <time.h>
 
+/* useful macros */
+
+#define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
+#define MAX(a, b) (((b) > (a)) ? (b) : (a))
+#define MIN(a, b) (((b) < (a)) ? (b) : (a))
+
 /*
  * public function prototypes
  */

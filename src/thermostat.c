@@ -13,15 +13,43 @@
 
 #include "thermostat.h"
 #include "util.h"
+#include "mcp9808.h"
+
+#define N_AVG 60
 
 struct state_str {
-	long sequence;
+	unsigned long sequence;
 	struct timespec timestamp;
+	float temp_degc;
+	float temp_arr[N_AVG];
+	float temp_sum;
 };
 
 /*
  * private functions
  */
+
+static int
+get_temperature(struct state_str *state, int mcp9808_fd)
+{
+	int idx;
+
+	/* measure temperature */
+	if (mcp9808_read_temp(mcp9808_fd,
+			      NULL, &state->temp_degc) == -1) {
+		syslog(LOG_ERR, "mcp9808 read temp: %s",
+		       strerror(errno));
+		return -1;
+	}
+
+	/* averaging */
+	idx = state->sequence % ARRAY_SIZE(state->temp_arr);
+	state->temp_sum -= state->temp_arr[idx];
+	state->temp_arr[idx] = state->temp_degc;
+	state->temp_sum += state->temp_degc;
+
+	return 0;
+}
 
 static int
 log_data(const struct state_str *state, const char *data_dir)
@@ -46,11 +74,13 @@ log_data(const struct state_str *state, const char *data_dir)
 		return -1;
 	}
 
-	fprintf(out, "%7ld %10ld %9ld %s\n",
+	fprintf(out, "%7lu %10ld %9ld %s %7.4f %7.4f\n",
 		state->sequence,
 		state->timestamp.tv_sec,
 		state->timestamp.tv_nsec,
-		date_buf);
+		date_buf,
+		state->temp_degc,
+		state->temp_sum / ARRAY_SIZE(state->temp_arr));
 
 	if (out != stdout) {
 		if (fclose(out) == EOF) {
@@ -71,25 +101,32 @@ tstat_control(struct gpiod_line *line, int mcp9808_fd, const char *data_dir)
 {
 	struct state_str state = {
 		.sequence = 0,
+		.temp_sum = 0.0f,
 	};
 
-	if (wait_for_next_second() == -1) {
-		syslog(LOG_ERR, "wait: %s", strerror(errno));
-		return -1;
-	}
+	memset(&state.temp_arr, 0, sizeof state.temp_arr);
+
 	for (;;) {
+		if (wait_for_next_second() == -1) {
+			syslog(LOG_ERR, "wait: %s", strerror(errno));
+			return -1;
+		}
+
+		state.sequence++;
+
 		if (clock_gettime(CLOCK_REALTIME, &state.timestamp) == -1) {
 			syslog(LOG_ERR, "clock_gettime: %s", strerror(errno));
 			return -1;
 		}
 
+		if (get_temperature(&state, mcp9808_fd) == -1)
+			return -1;
+
 		log_data(&state, data_dir);
 
-		state.sequence++;
-		if (wait_for_next_second() == -1) {
-			syslog(LOG_ERR, "wait: %s", strerror(errno));
-			return -1;
-		}
+		/* wait for temperature average to settle */
+		if (state.sequence < ARRAY_SIZE(state.temp_arr))
+			continue;
 	}
 
 	return 0;

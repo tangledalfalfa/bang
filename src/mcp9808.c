@@ -51,12 +51,9 @@ mcp9808_read_temp(int fd, uint16_t *raw, float *temp)
 	if (temp != NULL) {
 		rbuf[0] &= 0x1F; /* clear flags */
 
-		if (rbuf[0] & 0x10) { /* sign bit */
-			rbuf[0] &= 0x0F;
-			*temp = 256.0f - (rbuf[0] * 16.0f + rbuf[1] / 16.0f);
-		} else {
-			*temp = rbuf[0] * 16.0f + rbuf[1] / 16.0f;
-		}
+		*temp = (rbuf[0] & 0x0F) * 16.0f + rbuf[1] / 16.0f;
+		if (rbuf[0] & 0x10) /* sign bit */
+			*temp = 256.0f - *temp;
 	}
 
 	return 0;

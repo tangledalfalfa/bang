@@ -70,7 +70,7 @@ readn(int fd, void *buffer, size_t n)
                 return -1;
         }
 
-       left -= m;
+	left -= m;
         buf += m;
     } while (left);
 
@@ -88,7 +88,8 @@ wait_for_next_second(void)
 		return -1;
 
 	sleep_time.tv_sec = 0;
-	sleep_time.tv_nsec = 1000000000L - now.tv_nsec;
+	/* intentionally 1 short to avoid setting nsec to 1 billion */
+	sleep_time.tv_nsec = 999999999L - now.tv_nsec;
 
 	for (;;) {
 		ret = nanosleep(&sleep_time, &remain);
