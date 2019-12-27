@@ -2,6 +2,8 @@
  * MCP9808 Digital Temperature Sensor
  */
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>

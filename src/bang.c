@@ -35,6 +35,7 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "mcp9808.h"
+#include "thermostat.h"
 
 #define PGM_NAME program_invocation_short_name
 
@@ -465,6 +466,8 @@ main(int argc, char *argv[])
 	syslog(LOG_INFO, "started");
 
 	log_options(&options);
+
+	tstat_control(line, i2c_fd, options.data_dir);
 
 	close_i2c(i2c_fd);
 	close_gpio(chip, line);

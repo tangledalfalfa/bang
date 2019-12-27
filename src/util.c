@@ -1,5 +1,13 @@
+/*
+ */
+
+#include "config.h"
+
 #include <stddef.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
+#include <time.h>
 #include <errno.h>
 
 #include "util.h"
@@ -67,4 +75,53 @@ readn(int fd, void *buffer, size_t n)
     } while (left);
 
     return n;
+}
+
+int
+wait_for_next_second(void)
+{
+	int ret;
+	struct timespec now, sleep_time, remain;
+
+	ret = clock_gettime(CLOCK_REALTIME, &now);
+	if (ret == -1)
+		return -1;
+
+	sleep_time.tv_sec = 0;
+	sleep_time.tv_nsec = 1000000000L - now.tv_nsec;
+
+	for (;;) {
+		ret = nanosleep(&sleep_time, &remain);
+		if (ret == 0)
+			break;
+		if (errno != EINTR)
+			return -1;
+
+		sleep_time = remain;
+	}
+
+	return 0;
+}
+
+FILE *
+open_dayfile(const char *data_dir, const struct tm *timestamp)
+{
+	char day_buf[20];
+	char *path;
+	FILE *result;
+
+	if (data_dir == NULL)
+		return stdout;
+
+	if (strftime(day_buf, sizeof day_buf, "%Y%m%d.dat",
+		     timestamp) == 0)
+		return NULL;
+
+	if (asprintf(&path, "%s/%s", data_dir, day_buf) == -1)
+		return NULL;
+
+	result = fopen(path, "a");
+	free(path);
+
+	return result;
 }
