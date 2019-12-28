@@ -36,6 +36,7 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mcp9808.h"
 #include "thermostat.h"
+#include "config.h"
 
 #define PGM_NAME program_invocation_short_name
 
@@ -45,6 +46,7 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #define DFLT_GPIO_ACTIVE_LOW  true
 #define DFLT_I2C_DEVICE       "i2c-1"
 #define DFLT_MCP9808_I2C_ADDR 0x18
+#define DFLT_CONFIG_FILE      "bang.cfg"
 
 struct options_str {
 	const char *gpio_device;
@@ -53,6 +55,7 @@ struct options_str {
 	const char *i2c_device;
 	uint8_t mcp9808_i2c_addr;
 	const char *data_dir;
+    const char *config_file;
 	bool force;
 	bool test;
 };
@@ -86,6 +89,8 @@ print_help(void)
 		DFLT_MCP9808_I2C_ADDR);
 	printf("  -d, --data-dir=DIR:\tdata directory (default: %s)\n",
 		"stdout");
+    printf("  -c, --config=FILE:\tconfig file (default: %s)\n",
+        DFLT_CONFIG_FILE);
 	printf("  -f, --force:\t\toverride option warnings\n");
 	printf("  -T, --test:\t\tperform hardware test\n");
 }
@@ -147,6 +152,11 @@ parse_options(int argc, char *argv[], struct options_str *options)
 			.flag = NULL,
 			.val = 'd',
 		},
+		{       .name = "config",
+			.has_arg = required_argument,
+			.flag = NULL,
+			.val = 'c',
+		},
 		{       .name = "force",
 			.has_arg = no_argument,
 			.flag = NULL,
@@ -159,7 +169,7 @@ parse_options(int argc, char *argv[], struct options_str *options)
 		},
 		{ NULL, 0, NULL, 0 }  /* terminate */
 	};
-	static const char *const shortopts = ":hvg:n:p:i:a:d:fT";
+	static const char *const shortopts = ":hvg:n:p:i:a:d:c:fT";
 	int optc, opti;
 	const char *n_arg = NULL;
 	const char *p_arg = NULL;
@@ -212,6 +222,10 @@ parse_options(int argc, char *argv[], struct options_str *options)
 
 		case 'd':
 			options->data_dir = optarg;
+			break;
+
+		case 'c':
+			options->config_file = optarg;
 			break;
 
 		case 'f':
@@ -429,6 +443,7 @@ log_options(const struct options_str *options)
 	syslog(LOG_INFO, "    i2c-addr: 0x%02X", options->mcp9808_i2c_addr);
 	syslog(LOG_INFO, "    data-dir: %s",
 	       (options->data_dir == NULL) ? "stdout" : options->data_dir);
+    syslog(LOG_INFO, "    config: %s", options->config_file);
 	syslog(LOG_INFO, "    force: %s", options->force ? "true" : "false");
 	syslog(LOG_INFO, "    test: %s", options->test ? "true" : "false");
 }

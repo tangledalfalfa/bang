@@ -1,0 +1,25 @@
+# config file
+
+units = "F"
+
+schedule:
+(
+    {
+        time:
+	{
+	    day = "tue"
+	    hour = 15
+	    min = 30
+	},
+	setpoint = 68.0
+    },
+    {
+        time:
+	{
+	    day = "thu"
+	    hour = 5
+	    min = 50
+	},
+	setpoint = 65.0
+    },
+)
