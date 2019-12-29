@@ -176,9 +176,11 @@ tstat_control(struct gpiod_line *line, int mcp9808_fd,
 		if (get_temperature(&state, mcp9808_fd) == -1)
 			return -1;
 
-		state.setpoint_degc
-			= sched_get_setpoint(state.timestamp.tv_sec,
-				schedule);
+		/* update setpoint first time, and at start of each minute */
+		if ((state.sequence == 1) || (state.timestamp.tv_sec % 60 == 0))
+			state.setpoint_degc
+				= sched_get_setpoint(state.timestamp.tv_sec,
+						     schedule);
 
 		/* wait for temperature average to settle */
 		if (state.sequence < ARRAY_SIZE(state.temp_arr))
