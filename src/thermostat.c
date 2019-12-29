@@ -45,12 +45,12 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 struct state_str {
 	unsigned long sequence;
 	struct timespec timestamp;
-	float temp_degc;
-	float temp_arr[N_AVG];
-	float temp_sum;
-	float temp_avg;
+	double temp_degc;
+	double temp_arr[N_AVG];
+	double temp_sum;
+	double temp_avg;
 	bool heat_req;
-	float setpoint_degc;
+	double setpoint_degc;
 };
 
 /*
@@ -149,8 +149,8 @@ tstat_control(struct gpiod_line *line, int mcp9808_fd, const char *data_dir)
 {
 	struct state_str state = {
 		.sequence = 0,
-		.temp_sum = 0.0f,
-		.setpoint_degc = 0.0f,
+		.temp_sum = 0.0,
+		.setpoint_degc = 0.0,
 	};
 
 	memset(&state.temp_arr, 0, sizeof state.temp_arr);

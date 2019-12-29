@@ -51,7 +51,7 @@ mcp9808_config(int fd, uint8_t slave_addr)
 }
 
 int
-mcp9808_read_temp(int fd, uint16_t *raw, float *temp)
+mcp9808_read_temp(int fd, uint16_t *raw, double *temp)
 {
 	static const uint8_t addr_t_amb = 0x05;
 	uint8_t rbuf[2];
@@ -70,9 +70,9 @@ mcp9808_read_temp(int fd, uint16_t *raw, float *temp)
 	if (temp != NULL) {
 		rbuf[0] &= 0x1F; /* clear flags */
 
-		*temp = (rbuf[0] & 0x0F) * 16.0f + rbuf[1] / 16.0f;
+		*temp = (rbuf[0] & 0x0F) * 16.0 + rbuf[1] / 16.0;
 		if (rbuf[0] & 0x10) /* sign bit */
-			*temp = 256.0f - *temp;
+			*temp = 256.0 - *temp;
 	}
 
 	return 0;

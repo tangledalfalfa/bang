@@ -29,8 +29,8 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
  * public functions
  */
 
-float
+double
 sched_get_setpoint(time_t sse)
 {
-	return 20.0f;
+	return 20.0;
 }

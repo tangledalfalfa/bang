@@ -14,14 +14,14 @@
 
 struct event_str {
 	long sow;                   /* second of week */
-	float setpoint_degc;        /* setpoint */
+	double setpoint_degc;       /* setpoint */
 };
 
 struct schedule_str {
 	int num_events;
 	struct event_str event[SCHED_MAX_EVENTS];
 	bool hold_flag;
-	float hold_temp_degc;
+	double hold_temp_degc;
 	bool advance_flag;
 };
 
@@ -29,7 +29,7 @@ struct schedule_str {
  * public function prototypes
  */
 
-float
+double
 sched_get_setpoint(time_t sse);
 
 #endif

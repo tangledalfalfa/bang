@@ -3,35 +3,186 @@
 #include "config.h"
 
 #include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include <ctype.h>
 #include <libconfig.h>
 
 #include "cfgfile.h"
 #include "schedule.h"
+#include "util.h"
 
-static void
-print_schedule(const struct schedule_str *schedule)
+/*
+ * finite state machine for parsing day specs in the form:
+ *     tue, thu, fri - sun
+ */
+
+/* states */
+#define ST_START 0
+#define ST_FROM  1
+#define ST_DASH  2
+#define ST_TO    3
+#define ST_END   5
+#define ST_ERROR 6
+
+/* char types */
+#define CT_ALPHA  0		/* a-z */
+#define CT_SPACE  1		/* space or tab */
+#define CT_DASH   2
+#define CT_COMMA  3
+#define CT_ERROR  4		/* unrecognized */
+
+static int
+get_char_type(char c)
 {
-	int i;
+	return isalpha(c) ? CT_ALPHA
+		: (c == ' ') ? CT_SPACE
+		: (c == ',') ? CT_COMMA
+		: (c == '-') ? CT_DASH : CT_ERROR;
+}
 
-	for (i = 0; i < schedule->num_events; i++) {
-		printf("%f\n",
-		       schedule->event[i].setpoint_degc);
+static int
+get_day_index(const char *day)
+{
+	const char *day_table[] =
+		{ "sun", "mon", "tue", "wed", "thu", "fri", "sat" };
+	unsigned i;
+
+	for (i = 0; i < ARRAY_SIZE(day_table); i++)
+		if (memcmp(day, day_table[i], 3) == 0)
+			return i;
+	return -1;
+
+}
+
+static int
+update_mask(const char *from_buf, const char *to_buf, uint8_t *mask)
+{
+	int from_idx, to_idx, idx;
+
+	from_idx = get_day_index(from_buf);
+	to_idx = get_day_index(to_buf);
+
+	if ((from_idx == -1) || (to_idx == -1))
+		return -1;
+
+	if (to_idx < from_idx)
+		to_idx += 7;
+
+	for (idx = from_idx; idx <= to_idx; idx++)
+		*mask |= (1 << (idx % 7));
+
+	return 0;
+}
+
+static int
+parse_day(const char *day_spec, uint8_t *mask)
+{
+	int state;
+	char from_buf[3];
+	char to_buf[3];
+	unsigned idx;		/* index into from_buf, to_buf */
+
+	*mask = 0;
+	state = ST_START;
+	idx = 0;
+
+	while (*day_spec && (state != ST_ERROR)) {
+		int ct;
+
+		ct = get_char_type(*day_spec);
+
+		switch (state) {
+		case ST_START:
+
+			if (ct == CT_ALPHA) {
+				from_buf[idx++] = tolower(*day_spec);
+				state = ST_FROM;
+			} else if (ct != CT_SPACE) {
+				state = ST_ERROR;
+			}
+			break;
+
+		case ST_FROM:
+
+			if (ct == CT_ALPHA) {
+				if (idx < sizeof from_buf)
+					from_buf[idx++] = tolower(*day_spec);
+				else
+					state = ST_ERROR;
+			} else if (idx < sizeof from_buf) {
+				state = ST_ERROR;
+			} else if (ct == CT_DASH) {
+				idx = 0;
+				state = ST_DASH;
+			} else if (ct == CT_COMMA) {
+				memcpy(to_buf, from_buf, sizeof to_buf);
+				if (update_mask(from_buf, to_buf, mask) == -1) {
+					state = ST_ERROR;
+				} else {
+					idx = 0;
+					state = ST_START;
+				}
+			} else if (ct != CT_SPACE){
+				state = ST_ERROR;
+			}
+			break;
+
+		case ST_DASH:
+
+			if (ct == CT_ALPHA) {
+				to_buf[idx++] = tolower(*day_spec);
+				state = ST_TO;
+			} else if (ct != CT_SPACE) {
+				state = ST_ERROR;
+			}
+			break;
+
+		case ST_TO:
+
+			if (ct == CT_ALPHA) {
+				if (idx < sizeof to_buf)
+					to_buf[idx++] = tolower(*day_spec);
+				else
+					state = ST_ERROR;
+			} else if (idx < sizeof to_buf) {
+				state = ST_ERROR;
+			} else if (ct == CT_COMMA) {
+				if (update_mask(from_buf, to_buf, mask) == -1) {
+					state = ST_ERROR;
+				} else {
+					idx = 0;
+					state = ST_START;
+				}
+			} else if (ct != CT_SPACE) {
+				state = ST_ERROR;
+			}
+			break;
+
+		default:
+			fprintf(stderr, "state machine error\n");
+			return -1;
+		}
+
+		day_spec++;
+	}
+
+	if (((state == ST_FROM) || (state == ST_TO))
+	    && (idx == sizeof from_buf)) {
+		if (state == ST_FROM)
+			memcpy(to_buf, from_buf, sizeof to_buf);
+		return update_mask(from_buf, to_buf, mask);
+	} else {
+		return -1;
 	}
 }
 
 static int
-load_event(config_setting_t *event_setting, struct event_str *event)
+load_time(config_setting_t *time_setting, struct event_str *event)
 {
-	config_setting_t *time_setting;
+	const char *day;
 	int hour, minute;
-	double value;
-
-	time_setting = config_setting_get_member(event_setting, "time");
-	if (time_setting == NULL) {
-		fprintf(stderr, "failed to find time for event, line %d\n",
-			config_setting_source_line(event_setting));
-		return -1;
-	}
+	uint8_t day_mask;
 
 	/*
 	 * day can be:
@@ -41,6 +192,19 @@ load_event(config_setting_t *event_setting, struct event_str *event)
 	 *    mon-wed,sat
 	 * etc.
 	 */
+
+	if (!config_setting_lookup_string(time_setting, "day", &day)) {
+		fprintf(stderr, "failed to find day for event, line %d\n",
+			config_setting_source_line(time_setting));
+		return -1;
+	}
+
+	if (parse_day(day, &day_mask) == -1) {
+		fprintf(stderr, "syntax error, day spec %s, line %d\n",
+			day,
+			config_setting_source_line(time_setting));
+		return -1;
+	}
 
 	if (!config_setting_lookup_int(time_setting, "hour", &hour)) {
 		fprintf(stderr, "failed to find hour for event, line %d\n",
@@ -54,13 +218,37 @@ load_event(config_setting_t *event_setting, struct event_str *event)
 		return -1;
 	}
 
-	if (config_setting_lookup_float(event_setting, "setpoint", &value)) {
-		event->setpoint_degc = value;
-	} else {
+	printf("%s 0x%02X %02d:%02d\n", day, day_mask, hour, minute);
+
+	return 0;
+}
+
+static int
+load_event(config_setting_t *event_setting, struct event_str *event)
+{
+	config_setting_t *time_setting;
+	double setpoint;
+
+	time_setting = config_setting_get_member(event_setting, "time");
+	if (time_setting == NULL) {
+		fprintf(stderr, "failed to find time for event, line %d\n",
+			config_setting_source_line(event_setting));
+		return -1;
+	}
+
+	if (load_time(time_setting, event) == -1)
+		return -1;
+
+	if (!config_setting_lookup_float(event_setting, "setpoint",
+		    &setpoint)) {
 		fprintf(stderr, "failed fo find setpoint for event, line %d\n",
 			config_setting_source_line(event_setting));
 		return -1;
 	}
+	setpoint = deg_to_degc_auto(setpoint);
+
+	printf("%f deg\n", setpoint);
+
 	return 0;
 }
 
@@ -98,8 +286,6 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 			return -1;
 		}
 	}
-
-	print_schedule(schedule);
 
 	config_destroy(&cfg);
 

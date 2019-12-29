@@ -483,6 +483,7 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
+	/* load schedule from config file */
 	if (cfg_load(options.config_file, &schedule) == -1)
 		exit(EXIT_FAILURE);
 
