@@ -5,6 +5,7 @@
 #ifndef SCHEDULE_H_
 #define SCHEDULE_H_
 
+#include <stddef.h>
 #include <stdbool.h>
 #include <time.h>
 
@@ -18,7 +19,7 @@ struct event_str {
 };
 
 struct schedule_str {
-	int num_events;
+	size_t num_events;
 	struct event_str event[SCHED_MAX_EVENTS];
 	bool hold_flag;
 	double hold_temp_degc;

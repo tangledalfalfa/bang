@@ -448,9 +448,22 @@ log_options(const struct options_str *options)
 	syslog(LOG_INFO, "    i2c-addr: 0x%02X", options->mcp9808_i2c_addr);
 	syslog(LOG_INFO, "    data-dir: %s",
 	       (options->data_dir == NULL) ? "stdout" : options->data_dir);
-    syslog(LOG_INFO, "    config: %s", options->config_file);
+	syslog(LOG_INFO, "    config: %s", options->config_file);
 	syslog(LOG_INFO, "    force: %s", options->force ? "true" : "false");
 	syslog(LOG_INFO, "    test: %s", options->test ? "true" : "false");
+}
+
+static void
+log_schedule(const struct schedule_str *schedule)
+{
+	size_t i;
+
+	for (i = 0; i < schedule->num_events; i++) {
+		syslog(LOG_INFO,
+		       "%3u %6ld %4.1f",
+		       i, schedule->event[i].sow,
+		       schedule->event[i].setpoint_degc);
+	}
 }
 
 /* M A I N */
@@ -483,14 +496,15 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
+	openlog(program_invocation_short_name, LOG_ODELAY, LOG_USER);
+	syslog(LOG_INFO, "started");
+
 	/* load schedule from config file */
 	if (cfg_load(options.config_file, &schedule) == -1)
 		exit(EXIT_FAILURE);
 
-	openlog(program_invocation_short_name, LOG_ODELAY, LOG_USER);
-	syslog(LOG_INFO, "started");
-
 	log_options(&options);
+	log_schedule(&schedule);
 
 	tstat_control(line, i2c_fd, options.data_dir);
 

@@ -1,4 +1,8 @@
 /*
+ *  TO DO:
+ *      - output messages to syslog
+ *      - sort event list by sow
+ *      - validate hour, minute
  */
 #include "config.h"
 
@@ -74,6 +78,16 @@ update_mask(const char *from_buf, const char *to_buf, uint8_t *mask)
 
 	return 0;
 }
+
+/*
+ * day_spec can be:
+ *    tue
+ *    wed-fri
+ *    mon,wed,fri
+ *    mon-wed,sat
+ *    fri-mon
+ * etc.
+ */
 
 static int
 parse_day(const char *day_spec, uint8_t *mask)
@@ -178,20 +192,10 @@ parse_day(const char *day_spec, uint8_t *mask)
 }
 
 static int
-load_time(config_setting_t *time_setting, struct event_str *event)
+load_time(config_setting_t *time_setting,
+	  uint8_t *day_mask, int *hour, int *minute)
 {
 	const char *day;
-	int hour, minute;
-	uint8_t day_mask;
-
-	/*
-	 * day can be:
-	 *    tue
-	 *    wed-fri
-	 *    mon,wed,fri
-	 *    mon-wed,sat
-	 * etc.
-	 */
 
 	if (!config_setting_lookup_string(time_setting, "day", &day)) {
 		fprintf(stderr, "failed to find day for event, line %d\n",
@@ -199,34 +203,61 @@ load_time(config_setting_t *time_setting, struct event_str *event)
 		return -1;
 	}
 
-	if (parse_day(day, &day_mask) == -1) {
+	if (parse_day(day, day_mask) == -1) {
 		fprintf(stderr, "syntax error, day spec %s, line %d\n",
 			day,
 			config_setting_source_line(time_setting));
 		return -1;
 	}
 
-	if (!config_setting_lookup_int(time_setting, "hour", &hour)) {
+	if (!config_setting_lookup_int(time_setting, "hour", hour)) {
 		fprintf(stderr, "failed to find hour for event, line %d\n",
 			config_setting_source_line(time_setting));
 		return -1;
 	}
 
-	if (!config_setting_lookup_int(time_setting, "min", &minute)) {
+	if (!config_setting_lookup_int(time_setting, "min", minute)) {
 		fprintf(stderr, "failed to find minute for event, line %d\n",
 			config_setting_source_line(time_setting));
 		return -1;
 	}
 
-	printf("%s 0x%02X %02d:%02d\n", day, day_mask, hour, minute);
+	/* FIXME: validate hour, minute */
+
+	printf("%s 0x%02X %02d:%02d\n", day, *day_mask, *hour, *minute);
 
 	return 0;
 }
 
 static int
-load_event(config_setting_t *event_setting, struct event_str *event)
+update_events(struct schedule_str *schedule, uint8_t day_mask,
+	      int hour, int minute, double setpoint)
+{
+	uint8_t mask;
+	long day;
+
+	for (day = 0, mask = 0x01; mask != 0x80; day++, mask <<= 1) {
+		if (mask & day_mask) {
+			if (schedule->num_events == ARRAY_SIZE(schedule->event))
+				return -1;
+
+			schedule->event[schedule->num_events].sow
+				= (((day * 24) + hour) * 60 + minute) * 60;
+			schedule->event[schedule->num_events].setpoint_degc
+				= setpoint;
+			schedule->num_events++;
+		}
+	}
+
+	return 0;
+}
+
+static int
+load_event(config_setting_t *event_setting, struct schedule_str *schedule)
 {
 	config_setting_t *time_setting;
+	uint8_t day_mask;
+	int hour, minute;
 	double setpoint;
 
 	time_setting = config_setting_get_member(event_setting, "time");
@@ -236,7 +267,7 @@ load_event(config_setting_t *event_setting, struct event_str *event)
 		return -1;
 	}
 
-	if (load_time(time_setting, event) == -1)
+	if (load_time(time_setting, &day_mask, &hour, &minute) == -1)
 		return -1;
 
 	if (!config_setting_lookup_float(event_setting, "setpoint",
@@ -246,6 +277,9 @@ load_event(config_setting_t *event_setting, struct event_str *event)
 		return -1;
 	}
 	setpoint = deg_to_degc_auto(setpoint);
+
+	if (update_events(schedule, day_mask, hour, minute, setpoint) == -1)
+		return -1;
 
 	printf("%f deg\n", setpoint);
 
@@ -257,7 +291,7 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 {
 	config_t cfg;
 	config_setting_t *schedule_setting;
-	int i;
+	int i, count;
 
 	config_init(&cfg);
 
@@ -276,12 +310,13 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 		return -1;
 	}
 
-        schedule->num_events = config_setting_length(schedule_setting);
-	for (i = 0; i < schedule->num_events; i++) {
+	schedule->num_events = 0;
+        count = config_setting_length(schedule_setting);
+	for (i = 0; i < count; i++) {
 		config_setting_t *event_setting;
 
 		event_setting = config_setting_get_elem(schedule_setting, i);
-		if (load_event(event_setting, schedule->event + i) == -1) {
+		if (load_event(event_setting, schedule) == -1) {
 			config_destroy(&cfg);
 			return -1;
 		}
