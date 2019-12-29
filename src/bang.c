@@ -36,7 +36,9 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mcp9808.h"
 #include "thermostat.h"
-#include "config.h"
+#include "cfgfile.h"
+#include "schedule.h"
+#include "util.h"
 
 #define PGM_NAME program_invocation_short_name
 
@@ -48,6 +50,8 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #define DFLT_MCP9808_I2C_ADDR 0x18
 #define DFLT_CONFIG_FILE      "bang.cfg"
 
+#define MAX_EVENTS 100
+
 struct options_str {
 	const char *gpio_device;
 	unsigned gpio_offset;
@@ -55,7 +59,7 @@ struct options_str {
 	const char *i2c_device;
 	uint8_t mcp9808_i2c_addr;
 	const char *data_dir;
-    const char *config_file;
+	const char *config_file;
 	bool force;
 	bool test;
 };
@@ -89,7 +93,7 @@ print_help(void)
 		DFLT_MCP9808_I2C_ADDR);
 	printf("  -d, --data-dir=DIR:\tdata directory (default: %s)\n",
 		"stdout");
-    printf("  -c, --config=FILE:\tconfig file (default: %s)\n",
+	printf("  -c, --config=FILE:\tconfig file (default: %s)\n",
         DFLT_CONFIG_FILE);
 	printf("  -f, --force:\t\toverride option warnings\n");
 	printf("  -T, --test:\t\tperform hardware test\n");
@@ -183,6 +187,7 @@ parse_options(int argc, char *argv[], struct options_str *options)
 	options->i2c_device = DFLT_I2C_DEVICE;
 	options->mcp9808_i2c_addr = DFLT_MCP9808_I2C_ADDR;
 	options->data_dir = NULL; /* stdout */
+	options->config_file = DFLT_CONFIG_FILE;
 	options->force = false;
 	options->test = false;
 
@@ -456,6 +461,7 @@ main(int argc, char *argv[])
 	struct gpiod_chip *chip;
 	struct gpiod_line *line;
 	int i2c_fd;
+	struct schedule_str schedule;
 
 	if ((parse_options(argc, argv, &options) == -1)
 	    || (validate_options(&options) == -1))
@@ -476,6 +482,9 @@ main(int argc, char *argv[])
 		fprintf(stderr, "read temp: %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
+
+	if (cfg_load(options.config_file, &schedule) == -1)
+		exit(EXIT_FAILURE);
 
 	openlog(program_invocation_short_name, LOG_ODELAY, LOG_USER);
 	syslog(LOG_INFO, "started");
