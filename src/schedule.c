@@ -47,22 +47,21 @@ sse_to_sow(time_t sse)
  */
 
 double
-sched_get_setpoint(time_t sse, const struct schedule_str *schedule)
+sched_get_setpoint(time_t now, const struct schedule_str *schedule)
 {
 	long sow;		/* current second-of-week */
 	size_t i;
 
-	sow = sse_to_sow(sse);
+	sow = sse_to_sow(now);
 	//printf("sow: %ld\n", sow);
-	for (i = 0; i < schedule->num_events; i++) {
-		if (schedule->event[i].sow > sow) {
-			if (i == 0)
-				i = schedule->num_events - 1;
-			else
-				i--;
-			return schedule->event[i].setpoint_degc;
-		}
-	}
 
-	return schedule->event[schedule->num_events].setpoint_degc;
+	/* find next event */
+	for (i = 0; i < schedule->num_events; i++)
+		if (schedule->event[i].sow > sow)
+			break;
+
+	/* back up one (events are circular) */
+	i = (i == 0) ? schedule->num_events - 1 : i - 1;
+
+	return schedule->event[i].setpoint_degc;
 }

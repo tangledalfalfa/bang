@@ -333,6 +333,12 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 
 	schedule->num_events = 0;
         count = config_setting_length(schedule_setting);
+	if (count == 0) {
+		syslog(LOG_ERR, "file %s: schedule is empty",
+			fname);
+		return -1;
+	}
+
 	for (i = 0; i < count; i++) {
 		config_setting_t *event_setting;
 
