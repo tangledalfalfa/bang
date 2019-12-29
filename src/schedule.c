@@ -21,16 +21,48 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 
  */
 
+#include "config.h"
+
+#include <stddef.h>
+#include <stdio.h>
 #include <time.h>
 
 #include "schedule.h"
+
+/* calculate seconds-of-week, in local time */
+static long
+sse_to_sow(time_t sse)
+{
+	struct tm bdt;		/* broken-down time */
+
+	localtime_r(&sse, &bdt); /* for tm_gmtoff */
+
+	sse -= 3 * (24 * 60 * 60); /* January 1 1970 was a Thursday */
+	sse += bdt.tm_gmtoff;	   /* adjust to local time */
+	return sse % (7 * 24 * 60 * 60);
+}
 
 /*
  * public functions
  */
 
 double
-sched_get_setpoint(time_t sse)
+sched_get_setpoint(time_t sse, const struct schedule_str *schedule)
 {
-	return 20.0;
+	long sow;		/* current second-of-week */
+	size_t i;
+
+	sow = sse_to_sow(sse);
+	//printf("sow: %ld\n", sow);
+	for (i = 0; i < schedule->num_events; i++) {
+		if (schedule->event[i].sow > sow) {
+			if (i == 0)
+				i = schedule->num_events - 1;
+			else
+				i--;
+			return schedule->event[i].setpoint_degc;
+		}
+	}
+
+	return schedule->event[schedule->num_events].setpoint_degc;
 }

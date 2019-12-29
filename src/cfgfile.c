@@ -1,15 +1,13 @@
 /*
- *  TO DO:
- *      - output messages to syslog
- *      - sort event list by sow
- *      - validate hour, minute
  */
 #include "config.h"
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <syslog.h>
 #include <libconfig.h>
 
 #include "cfgfile.h"
@@ -174,7 +172,7 @@ parse_day(const char *day_spec, uint8_t *mask)
 			break;
 
 		default:
-			fprintf(stderr, "state machine error\n");
+			syslog(LOG_ERR, "state machine error");
 			return -1;
 		}
 
@@ -198,33 +196,43 @@ load_time(config_setting_t *time_setting,
 	const char *day;
 
 	if (!config_setting_lookup_string(time_setting, "day", &day)) {
-		fprintf(stderr, "failed to find day for event, line %d\n",
+		syslog(LOG_ERR, "failed to find day for event, line %d",
 			config_setting_source_line(time_setting));
 		return -1;
 	}
 
 	if (parse_day(day, day_mask) == -1) {
-		fprintf(stderr, "syntax error, day spec %s, line %d\n",
+		syslog(LOG_ERR, "syntax error, day spec %s, line %d",
 			day,
 			config_setting_source_line(time_setting));
 		return -1;
 	}
 
 	if (!config_setting_lookup_int(time_setting, "hour", hour)) {
-		fprintf(stderr, "failed to find hour for event, line %d\n",
+		syslog(LOG_ERR, "failed to find hour for event, line %d",
 			config_setting_source_line(time_setting));
 		return -1;
 	}
 
 	if (!config_setting_lookup_int(time_setting, "min", minute)) {
-		fprintf(stderr, "failed to find minute for event, line %d\n",
+		syslog(LOG_ERR, "failed to find minute for event, line %d",
 			config_setting_source_line(time_setting));
 		return -1;
 	}
 
-	/* FIXME: validate hour, minute */
+	if ((*hour < 0) || (*hour >= 24)) {
+		syslog(LOG_ERR, "hour %d invalid, line %d", *hour,
+			config_setting_source_line(time_setting));
+		return -1;
+	}
 
-	printf("%s 0x%02X %02d:%02d\n", day, *day_mask, *hour, *minute);
+	if ((*minute < 0) || (*minute >= 60)) {
+		syslog(LOG_ERR, "minute %d invalid, line %d", *minute,
+			config_setting_source_line(time_setting));
+		return -1;
+	}
+
+	//printf("%s 0x%02X %02d:%02d\n", day, *day_mask, *hour, *minute);
 
 	return 0;
 }
@@ -262,7 +270,7 @@ load_event(config_setting_t *event_setting, struct schedule_str *schedule)
 
 	time_setting = config_setting_get_member(event_setting, "time");
 	if (time_setting == NULL) {
-		fprintf(stderr, "failed to find time for event, line %d\n",
+		syslog(LOG_ERR, "failed to find time for event, line %d",
 			config_setting_source_line(event_setting));
 		return -1;
 	}
@@ -272,7 +280,7 @@ load_event(config_setting_t *event_setting, struct schedule_str *schedule)
 
 	if (!config_setting_lookup_float(event_setting, "setpoint",
 		    &setpoint)) {
-		fprintf(stderr, "failed fo find setpoint for event, line %d\n",
+		syslog(LOG_ERR, "failed fo find setpoint for event, line %d",
 			config_setting_source_line(event_setting));
 		return -1;
 	}
@@ -281,9 +289,22 @@ load_event(config_setting_t *event_setting, struct schedule_str *schedule)
 	if (update_events(schedule, day_mask, hour, minute, setpoint) == -1)
 		return -1;
 
-	printf("%f deg\n", setpoint);
+	//printf("%f deg\n", setpoint);
 
 	return 0;
+}
+
+/* callback for qsort */
+static int
+compare_events(const struct event_str *event1,
+	const struct event_str *event2)
+{
+	if (event1->sow < event2->sow)
+		return -1;
+	else if (event1->sow > event2->sow)
+		return 1;
+	else
+		return 0;
 }
 
 int
@@ -296,7 +317,7 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 	config_init(&cfg);
 
 	if (!config_read_file(&cfg, fname)) {
-		fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
+		syslog(LOG_ERR, "%s:%d - %s", config_error_file(&cfg),
 			config_error_line(&cfg), config_error_text(&cfg));
 		config_destroy(&cfg);
 		return -1;
@@ -304,7 +325,7 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 
 	schedule_setting = config_lookup(&cfg, "schedule");
 	if (schedule_setting == NULL) {
-		fprintf(stderr, "no schedule setting found in %s\n",
+		syslog(LOG_ERR, "no schedule setting found in %s",
 			fname);
 		config_destroy(&cfg);
 		return -1;
@@ -323,6 +344,12 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 	}
 
 	config_destroy(&cfg);
+
+	qsort(schedule->event, schedule->num_events,
+	      sizeof schedule->event[0],
+	      (int (*)(const void *, const void *))compare_events);
+
+	schedule->hold_flag = schedule->advance_flag = false;
 
 	return 0;
 }

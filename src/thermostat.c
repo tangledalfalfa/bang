@@ -109,6 +109,8 @@ log_data(const struct state_str *state, const char *data_dir)
 		return -1;
 	}
 
+	//printf("%ld\n", bdt.tm_gmtoff);
+
 	out = open_dayfile(data_dir, &bdt);
 	if (out == NULL) {
 		syslog(LOG_ERR, "open_dayfile: %s", strerror(errno));
@@ -143,9 +145,10 @@ log_data(const struct state_str *state, const char *data_dir)
 /*
  * public functions
  */
-
 int
-tstat_control(struct gpiod_line *line, int mcp9808_fd, const char *data_dir)
+tstat_control(struct gpiod_line *line, int mcp9808_fd,
+	      const struct schedule_str *schedule,
+	      const char *data_dir)
 {
 	struct state_str state = {
 		.sequence = 0,
@@ -174,7 +177,8 @@ tstat_control(struct gpiod_line *line, int mcp9808_fd, const char *data_dir)
 			return -1;
 
 		state.setpoint_degc
-			= sched_get_setpoint(state.timestamp.tv_sec);
+			= sched_get_setpoint(state.timestamp.tv_sec,
+				schedule);
 
 		/* wait for temperature average to settle */
 		if (state.sequence < ARRAY_SIZE(state.temp_arr))

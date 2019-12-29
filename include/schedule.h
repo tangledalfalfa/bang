@@ -31,6 +31,6 @@ struct schedule_str {
  */
 
 double
-sched_get_setpoint(time_t sse);
+sched_get_setpoint(time_t sse, const struct schedule_str *schedule);
 
 #endif

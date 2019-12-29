@@ -506,7 +506,7 @@ main(int argc, char *argv[])
 	log_options(&options);
 	log_schedule(&schedule);
 
-	tstat_control(line, i2c_fd, options.data_dir);
+	tstat_control(line, i2c_fd, &schedule, options.data_dir);
 
 	close_i2c(i2c_fd);
 	close_gpio(chip, line);
