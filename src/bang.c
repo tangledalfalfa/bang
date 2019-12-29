@@ -49,6 +49,7 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #define DFLT_I2C_DEVICE       "i2c-1"
 #define DFLT_MCP9808_I2C_ADDR 0x18
 #define DFLT_CONFIG_FILE      "bang.cfg"
+#define DFLT_DATA_INTERVAL    60
 
 #define MAX_EVENTS 100
 
@@ -59,6 +60,7 @@ struct options_str {
 	const char *i2c_device;
 	uint8_t mcp9808_i2c_addr;
 	const char *data_dir;
+	int data_interval;
 	const char *config_file;
 	bool force;
 	bool test;
@@ -93,6 +95,9 @@ print_help(void)
 		DFLT_MCP9808_I2C_ADDR);
 	printf("  -d, --data-dir=DIR:\tdata directory (default: %s)\n",
 		"stdout");
+	printf("  -s, --data-int=SEC:\tdata logging interval (default: %d)\n",
+	       DFLT_DATA_INTERVAL);
+	printf("                     \t(zero to disable)\n");
 	printf("  -c, --config=FILE:\tconfig file (default: %s)\n",
         DFLT_CONFIG_FILE);
 	printf("  -f, --force:\t\toverride option warnings\n");
@@ -156,6 +161,11 @@ parse_options(int argc, char *argv[], struct options_str *options)
 			.flag = NULL,
 			.val = 'd',
 		},
+		{       .name = "data-int",
+			.has_arg = required_argument,
+			.flag = NULL,
+			.val = 's',
+		},
 		{       .name = "config",
 			.has_arg = required_argument,
 			.flag = NULL,
@@ -173,11 +183,12 @@ parse_options(int argc, char *argv[], struct options_str *options)
 		},
 		{ NULL, 0, NULL, 0 }  /* terminate */
 	};
-	static const char *const shortopts = ":hvg:n:p:i:a:d:c:fT";
+	static const char *const shortopts = ":hvg:n:p:i:a:d:s:c:fT";
 	int optc, opti;
 	const char *n_arg = NULL;
 	const char *p_arg = NULL;
 	const char *a_arg = NULL;
+	const char *s_arg = NULL;
 	long long val;
 	char *endptr;
 
@@ -187,6 +198,7 @@ parse_options(int argc, char *argv[], struct options_str *options)
 	options->i2c_device = DFLT_I2C_DEVICE;
 	options->mcp9808_i2c_addr = DFLT_MCP9808_I2C_ADDR;
 	options->data_dir = NULL; /* stdout */
+	options->data_interval = DFLT_DATA_INTERVAL;
 	options->config_file = DFLT_CONFIG_FILE;
 	options->force = false;
 	options->test = false;
@@ -227,6 +239,10 @@ parse_options(int argc, char *argv[], struct options_str *options)
 
 		case 'd':
 			options->data_dir = optarg;
+			break;
+
+		case 's':
+			s_arg = optarg;
 			break;
 
 		case 'c':
@@ -290,6 +306,17 @@ parse_options(int argc, char *argv[], struct options_str *options)
 			return -1;
 		}
 		options->mcp9808_i2c_addr = val;
+	}
+
+	if (s_arg != NULL) {
+		val = strtoll(s_arg, &endptr, 0);
+		if ((val < 0) || (val > 86400) || (*endptr != '\0')) {
+			fprintf(stderr,
+				"%s: data logging interval %lld invalid\n",
+				PGM_NAME, val);
+			return -1;
+		}
+		options->data_interval = val;
 	}
 
 	return 0;
@@ -506,7 +533,8 @@ main(int argc, char *argv[])
 	log_options(&options);
 	log_schedule(&schedule);
 
-	tstat_control(line, i2c_fd, &schedule, options.data_dir);
+	tstat_control(line, i2c_fd, &schedule, options.data_dir,
+		options.data_interval);
 
 	close_i2c(i2c_fd);
 	close_gpio(chip, line);

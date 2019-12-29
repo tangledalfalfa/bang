@@ -148,7 +148,7 @@ log_data(const struct state_str *state, const char *data_dir)
 int
 tstat_control(struct gpiod_line *line, int mcp9808_fd,
 	      const struct schedule_str *schedule,
-	      const char *data_dir)
+	      const char *data_dir, int data_interval)
 {
 	struct state_str state = {
 		.sequence = 0,
@@ -193,7 +193,9 @@ tstat_control(struct gpiod_line *line, int mcp9808_fd,
 				return -1;
 		}
 
-		log_data(&state, data_dir);
+		if ((data_interval != 0)
+		    && (state.timestamp.tv_sec % data_interval == 0))
+			log_data(&state, data_dir);
 	}
 
 	return 0;
