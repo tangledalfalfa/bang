@@ -134,6 +134,8 @@ update_schedule(struct schedule_str *schedule)
 		schedule->event[i] = temp_sched.event[i];
 	schedule->config_mtime = temp_sched.config_mtime;
 
+	schedule->units = temp_sched.units;
+
 	return 0;
 }
 
@@ -193,11 +195,13 @@ control_temp(struct state_str *state, struct gpiod_line *line)
 }
 
 static int
-log_data(const struct state_str *state, const char *data_dir)
+log_data(const struct state_str *state, const char *data_dir,
+	 enum units_enum units)
 {
 	FILE *out;
 	struct tm bdt;		/* broken down time */
 	char date_buf[20];
+	double temp, temp_avg, setpoint;
 
 	if (localtime_r(&state->timestamp.tv_sec, &bdt) == NULL) {
 		syslog(LOG_ERR, "localtime_r: %s", strerror(errno));
@@ -217,14 +221,24 @@ log_data(const struct state_str *state, const char *data_dir)
 		return -1;
 	}
 
+	if (units == UNITS_DEGF) {
+		temp = degc_to_degf(state->temp_degc);
+		temp_avg = degc_to_degf(state->temp_avg);
+		setpoint = degc_to_degf(state->setpoint_degc);
+	} else {
+		temp = state->temp_degc;
+		temp_avg = state->temp_avg;
+		setpoint = state->setpoint_degc;
+	}
+
 	fprintf(out, "%7lu %10ld %9ld %s %7.4f %7.4f %4.1f %d\n",
 		state->sequence,
 		state->timestamp.tv_sec,
 		state->timestamp.tv_nsec,
 		date_buf,
-		state->temp_degc,
-		state->temp_avg,
-		state->setpoint_degc,
+		temp,
+		temp_avg,
+		setpoint,
 		state->heat_req);
 
 	if (out != stdout) {
@@ -279,7 +293,7 @@ tstat_control(struct gpiod_line *line, int mcp9808_fd,
 		/* log data (if requested) */
 		if ((data_interval != 0)
 		    && (state.timestamp.tv_sec % data_interval == 0))
-			log_data(&state, data_dir);
+			log_data(&state, data_dir, schedule->units);
 	}
 
 	return 0;

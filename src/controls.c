@@ -15,6 +15,8 @@
 #include <errno.h>
 
 #include "controls.h"
+#include "schedule.h"
+#include "util.h"
 
 #ifndef CTRL_FNAME_HOLD
 #define CTRL_FNAME_HOLD    "hold"
@@ -102,6 +104,12 @@ check_hold(struct schedule_str *schedule)
 	}
 
 	syslog(LOG_INFO, "HOLD: %.2f", hold_temp);
+
+	/* convert to deg C if needed */
+	if (schedule->units == UNITS_DEGF)
+		hold_temp = degf_to_degc(hold_temp);
+	else if (schedule->units == UNITS_AUTO)
+		hold_temp = deg_to_degc_auto(hold_temp);
 
 	schedule->hold_temp_degc = hold_temp; /* FIXME: units */
 	schedule->hold_flag = true;

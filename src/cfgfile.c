@@ -264,6 +264,17 @@ update_events(struct schedule_str *schedule, uint8_t day_mask,
 	return 0;
 }
 
+static double
+to_degc(double temp, enum units_enum units)
+{
+	if (units == UNITS_DEGC)
+		return temp;
+	else if (units == UNITS_DEGF)
+		return degf_to_degc(temp);
+	else
+		return deg_to_degc_auto(temp);
+}
+
 static int
 load_event(config_setting_t *event_setting, struct schedule_str *schedule)
 {
@@ -288,7 +299,7 @@ load_event(config_setting_t *event_setting, struct schedule_str *schedule)
 			config_setting_source_line(event_setting));
 		return -1;
 	}
-	setpoint = deg_to_degc_auto(setpoint);
+	setpoint = to_degc(setpoint, schedule->units);
 
 	if (update_events(schedule, day_mask, hour, minute, setpoint) == -1)
 		return -1;
@@ -316,6 +327,11 @@ static void
 log_schedule(const struct schedule_str *schedule)
 {
 	size_t i;
+	char *units;
+
+	units = (schedule->units == UNITS_DEGC) ? "deg C"
+		: (schedule->units == UNITS_DEGF) ? "deg F" : "auto";
+	syslog(LOG_INFO, "units: %s", units);
 
 	for (i = 0; i < schedule->num_events; i++) {
 		syslog(LOG_INFO,
@@ -325,6 +341,10 @@ log_schedule(const struct schedule_str *schedule)
 	}
 }
 
+/*
+ * public functions
+ */
+
 int
 cfg_load(const char *fname, struct schedule_str *schedule)
 {
@@ -332,6 +352,7 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 	config_t cfg;
 	config_setting_t *schedule_setting;
 	int i, count;
+	const char *units;
 
 	/* initialize config file modification time */
 	if (stat(fname, &statbuf) == -1) {
@@ -348,6 +369,18 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 			config_error_line(&cfg), config_error_text(&cfg));
 		config_destroy(&cfg);
 		return -1;
+	}
+
+	/* get temperature units: deg C, deg F, or auto */
+	if (config_lookup_string(&cfg, "units", &units)) {
+		char c;
+
+		/* just look at the first char */
+		c = tolower(*units);
+		schedule->units = (c == 'c') ? UNITS_DEGC
+			: (c == 'f') ? UNITS_DEGF : UNITS_AUTO;
+	} else {
+		schedule->units = UNITS_AUTO; /* defaults to AUTO */
 	}
 
 	schedule_setting = config_lookup(&cfg, "schedule");
