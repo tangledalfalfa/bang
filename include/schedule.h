@@ -38,6 +38,7 @@ struct schedule_str {
 	time_t hold_mtime;
 	time_t advance_mtime;
 	time_t resume_mtime;
+	long curr_sow;		/* second-of-week, used for detecting events */
 };
 
 /*
@@ -45,6 +46,6 @@ struct schedule_str {
  */
 
 double
-sched_get_setpoint(time_t sse, const struct schedule_str *schedule);
+sched_get_setpoint(time_t sse, struct schedule_str *schedule);
 
 #endif

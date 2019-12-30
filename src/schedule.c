@@ -47,25 +47,36 @@ sse_to_sow(time_t sse)
  */
 
 double
-sched_get_setpoint(time_t now, const struct schedule_str *schedule)
+sched_get_setpoint(time_t now, struct schedule_str *schedule)
 {
 	long sow;		/* current second-of-week */
 	size_t i;
 
 	sow = sse_to_sow(now);
 
-	/* find next event */
+	/* find next (upcoming) event */
 	/* FIXME: binary search more efficient... */
 	for (i = 0; i < schedule->num_events; i++)
 		if (schedule->event[i].sow > sow)
 			break;
-
 	/* i is now 0..num_events */
-	if (schedule->advance_flag)
-		i %= schedule->num_events;
+
+	/* back up one (0 goes to last) */
+	if (i == 0)
+		i = schedule->num_events - 1;
 	else
-		/* back up one (0 goes to last) */
-		i = (i == 0) ? schedule->num_events - 1 : i - 1;
+		i--;
+
+	if (schedule->curr_sow == -1) {
+		schedule->curr_sow = schedule->event[i].sow;
+	} else if (schedule->curr_sow != schedule->event[i].sow) {
+		schedule->curr_sow = schedule->event[i].sow;
+		/* advance only lasts until next event */
+		schedule->advance_flag = false;
+	}
+
+	if (schedule->advance_flag)
+		i = (i + 1) % schedule->num_events;
 
 	return schedule->event[i].setpoint_degc;
 }

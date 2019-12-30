@@ -218,11 +218,8 @@ load_time(config_setting_t *time_setting,
 		return -1;
 	}
 
-	if (!config_setting_lookup_int(time_setting, "min", minute)) {
-		syslog(LOG_ERR, "failed to find minute for event, line %d",
-			config_setting_source_line(time_setting));
-		return -1;
-	}
+	if (!config_setting_lookup_int(time_setting, "min", minute))
+		*minute = 0; 	/* default to top of hour */
 
 	if ((*hour < 0) || (*hour >= 24)) {
 		syslog(LOG_ERR, "hour %d invalid, line %d", *hour,
@@ -282,6 +279,7 @@ load_event(config_setting_t *event_setting, struct schedule_str *schedule)
 	uint8_t day_mask;
 	int hour, minute;
 	double setpoint;
+	int setpt_int;
 
 	time_setting = config_setting_get_member(event_setting, "time");
 	if (time_setting == NULL) {
@@ -293,10 +291,15 @@ load_event(config_setting_t *event_setting, struct schedule_str *schedule)
 	if (load_time(time_setting, &day_mask, &hour, &minute) == -1)
 		return -1;
 
-	if (!config_setting_lookup_float(event_setting, "setpoint",
+	if (config_setting_lookup_float(event_setting, "setpoint",
 		    &setpoint)) {
+	} else if (config_setting_lookup_int(event_setting, "setpoint",
+			   &setpt_int)) {
+		/* libconfig won't parse a float without a decimal pt */
+		setpoint = setpt_int;
+	} else {
 		syslog(LOG_ERR, "failed fo find setpoint for event, line %d",
-			config_setting_source_line(event_setting));
+		       config_setting_source_line(event_setting));
 		return -1;
 	}
 	setpoint = to_degc(setpoint, schedule->units);

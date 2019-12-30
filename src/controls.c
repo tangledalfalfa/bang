@@ -179,6 +179,8 @@ ctrls_init(struct schedule_str *schedule)
 		    &schedule->resume_mtime) == -1)
 		return -1;
 
+	schedule->curr_sow = -1;
+
 	return 0;
 }
 
