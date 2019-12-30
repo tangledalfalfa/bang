@@ -56,6 +56,7 @@ sched_get_setpoint(time_t now, const struct schedule_str *schedule)
 	//printf("sow: %ld\n", sow);
 
 	/* find next event */
+	/* FIXME: binary search more efficient... */
 	for (i = 0; i < schedule->num_events; i++)
 		if (schedule->event[i].sow > sow)
 			break;

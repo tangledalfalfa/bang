@@ -24,6 +24,8 @@ struct schedule_str {
 	bool hold_flag;
 	double hold_temp_degc;
 	bool advance_flag;
+	const char *config_fname; /* need to check for config file updates */
+	time_t config_mtime;	  /* config file time of last modification */
 };
 
 /*

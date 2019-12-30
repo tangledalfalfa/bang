@@ -27,6 +27,9 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdbool.h>
 #include <string.h>
 #include <time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <gpiod.h>
 #include <syslog.h>
 #include <errno.h>
@@ -35,6 +38,7 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util.h"
 #include "mcp9808.h"
 #include "schedule.h"
+#include "cfgfile.h"
 
 #define N_AVG 60
 
@@ -142,12 +146,43 @@ log_data(const struct state_str *state, const char *data_dir)
 	return 0;
 }
 
+static int
+update_schedule(struct schedule_str *schedule)
+{
+	struct stat statbuf;
+	struct schedule_str temp_sched;
+	size_t i;
+
+	if (stat(schedule->config_fname, &statbuf) == -1) {
+		syslog(LOG_ERR,
+		       "stat(%s): %s",
+		       schedule->config_fname, strerror(errno));
+		return -1;
+	}
+
+	if (statbuf.st_mtim.tv_sec <= schedule->config_mtime)
+		return 0;
+
+	syslog(LOG_INFO, "updating schedule");
+
+	/* failure leaves schedule unchanged */
+	if (cfg_load(schedule->config_fname, &temp_sched) == -1)
+		return -1;
+
+	schedule->num_events = temp_sched.num_events;
+	for (i = 0; i < schedule->num_events; i++)
+		schedule->event[i] = temp_sched.event[i];
+	schedule->config_mtime = temp_sched.config_mtime;
+
+	return 0;
+}
+
 /*
  * public functions
  */
 int
 tstat_control(struct gpiod_line *line, int mcp9808_fd,
-	      const struct schedule_str *schedule,
+	      struct schedule_str *schedule,
 	      const char *data_dir, int data_interval)
 {
 	struct state_str state = {
@@ -177,10 +212,16 @@ tstat_control(struct gpiod_line *line, int mcp9808_fd,
 			return -1;
 
 		/* update setpoint first time, and at start of each minute */
-		if ((state.sequence == 1) || (state.timestamp.tv_sec % 60 == 0))
+		if ((state.sequence == 1)
+		    || (state.timestamp.tv_sec % 60 == 0)) {
+			if (state.sequence != 1)
+				if (update_schedule(schedule) == -1)
+					syslog(LOG_ERR,
+					       "schedule update failed!");
 			state.setpoint_degc
 				= sched_get_setpoint(state.timestamp.tv_sec,
 						     schedule);
+		}
 
 		/* wait for temperature average to settle */
 		if (state.sequence < ARRAY_SIZE(state.temp_arr))

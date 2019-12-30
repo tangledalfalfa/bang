@@ -480,19 +480,6 @@ log_options(const struct options_str *options)
 	syslog(LOG_INFO, "    test: %s", options->test ? "true" : "false");
 }
 
-static void
-log_schedule(const struct schedule_str *schedule)
-{
-	size_t i;
-
-	for (i = 0; i < schedule->num_events; i++) {
-		syslog(LOG_INFO,
-		       "%3u %6ld %4.1f",
-		       i, schedule->event[i].sow,
-		       schedule->event[i].setpoint_degc);
-	}
-}
-
 /* M A I N */
 int
 main(int argc, char *argv[])
@@ -506,6 +493,10 @@ main(int argc, char *argv[])
 	if ((parse_options(argc, argv, &options) == -1)
 	    || (validate_options(&options) == -1))
 		exit(EXIT_FAILURE);
+
+	/* schedule initializations */
+	schedule.config_fname = options.config_file;
+	schedule.hold_flag = schedule.advance_flag = false;
 
 	if (open_gpio(&options, &chip, &line) == -1)
 		exit(EXIT_FAILURE);
@@ -531,7 +522,6 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 
 	log_options(&options);
-	log_schedule(&schedule);
 
 	tstat_control(line, i2c_fd, &schedule, options.data_dir,
 		options.data_interval);

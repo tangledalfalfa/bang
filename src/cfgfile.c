@@ -8,7 +8,11 @@
 #include <string.h>
 #include <ctype.h>
 #include <syslog.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <libconfig.h>
+#include <errno.h>
 
 #include "cfgfile.h"
 #include "schedule.h"
@@ -307,12 +311,34 @@ compare_events(const struct event_str *event1,
 		return 0;
 }
 
+static void
+log_schedule(const struct schedule_str *schedule)
+{
+	size_t i;
+
+	for (i = 0; i < schedule->num_events; i++) {
+		syslog(LOG_INFO,
+		       "%3u %6ld %4.1f",
+		       i, schedule->event[i].sow,
+		       schedule->event[i].setpoint_degc);
+	}
+}
+
 int
 cfg_load(const char *fname, struct schedule_str *schedule)
 {
+	struct stat statbuf;
 	config_t cfg;
 	config_setting_t *schedule_setting;
 	int i, count;
+
+	/* initialize config file modification time */
+	if (stat(fname, &statbuf) == -1) {
+		syslog(LOG_ERR, "stat(%s): %s",
+		       fname, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	schedule->config_mtime = statbuf.st_mtim.tv_sec;
 
 	config_init(&cfg);
 
@@ -355,7 +381,7 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 	      sizeof schedule->event[0],
 	      (int (*)(const void *, const void *))compare_events);
 
-	schedule->hold_flag = schedule->advance_flag = false;
+	log_schedule(schedule);
 
 	return 0;
 }
