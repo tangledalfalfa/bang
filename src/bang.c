@@ -38,6 +38,7 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "thermostat.h"
 #include "cfgfile.h"
 #include "schedule.h"
+#include "controls.h"
 #include "util.h"
 
 #define PGM_NAME program_invocation_short_name
@@ -50,6 +51,7 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #define DFLT_MCP9808_I2C_ADDR 0x18
 #define DFLT_CONFIG_FILE      "bang.cfg"
 #define DFLT_DATA_INTERVAL    60
+#define DFLT_CTRL_DIR         ".bang"
 
 #define MAX_EVENTS 100
 
@@ -62,6 +64,8 @@ struct options_str {
 	const char *data_dir;
 	int data_interval;
 	const char *config_file;
+	const char *ctrl_dir;
+	/* FIXME: consider removing these last two */
 	bool force;
 	bool test;
 };
@@ -99,7 +103,9 @@ print_help(void)
 	       DFLT_DATA_INTERVAL);
 	printf("                     \t(zero to disable)\n");
 	printf("  -c, --config=FILE:\tconfig file (default: %s)\n",
-        DFLT_CONFIG_FILE);
+	       DFLT_CONFIG_FILE);
+	printf("  -k, --ctrl-dir=DIR:\tdirectory for control files"
+	       " (default: %s)\n", DFLT_CTRL_DIR);
 	printf("  -f, --force:\t\toverride option warnings\n");
 	printf("  -T, --test:\t\tperform hardware test\n");
 }
@@ -171,6 +177,11 @@ parse_options(int argc, char *argv[], struct options_str *options)
 			.flag = NULL,
 			.val = 'c',
 		},
+		{       .name = "ctrl-dir",
+			.has_arg = required_argument,
+			.flag = NULL,
+			.val = 'k',
+		},
 		{       .name = "force",
 			.has_arg = no_argument,
 			.flag = NULL,
@@ -183,7 +194,7 @@ parse_options(int argc, char *argv[], struct options_str *options)
 		},
 		{ NULL, 0, NULL, 0 }  /* terminate */
 	};
-	static const char *const shortopts = ":hvg:n:p:i:a:d:s:c:fT";
+	static const char *const shortopts = ":hvg:n:p:i:a:d:s:c:k:fT";
 	int optc, opti;
 	const char *n_arg = NULL;
 	const char *p_arg = NULL;
@@ -200,6 +211,7 @@ parse_options(int argc, char *argv[], struct options_str *options)
 	options->data_dir = NULL; /* stdout */
 	options->data_interval = DFLT_DATA_INTERVAL;
 	options->config_file = DFLT_CONFIG_FILE;
+	options->ctrl_dir = DFLT_CTRL_DIR;
 	options->force = false;
 	options->test = false;
 
@@ -247,6 +259,10 @@ parse_options(int argc, char *argv[], struct options_str *options)
 
 		case 'c':
 			options->config_file = optarg;
+			break;
+
+		case 'k':
+			options->ctrl_dir = optarg;
 			break;
 
 		case 'f':
@@ -476,6 +492,7 @@ log_options(const struct options_str *options)
 	syslog(LOG_INFO, "    data-dir: %s",
 	       (options->data_dir == NULL) ? "stdout" : options->data_dir);
 	syslog(LOG_INFO, "    config: %s", options->config_file);
+	syslog(LOG_INFO, "    ctrl-dir: %s", options->ctrl_dir);
 	syslog(LOG_INFO, "    force: %s", options->force ? "true" : "false");
 	syslog(LOG_INFO, "    test: %s", options->test ? "true" : "false");
 }
@@ -497,6 +514,7 @@ main(int argc, char *argv[])
 	/* schedule initializations */
 	schedule.config_fname = options.config_file;
 	schedule.hold_flag = schedule.advance_flag = false;
+	schedule.ctrl_dir = options.ctrl_dir;
 
 	if (open_gpio(&options, &chip, &line) == -1)
 		exit(EXIT_FAILURE);
@@ -517,14 +535,18 @@ main(int argc, char *argv[])
 	openlog(program_invocation_short_name, LOG_ODELAY, LOG_USER);
 	syslog(LOG_INFO, "started");
 
+	log_options(&options);
+
 	/* load schedule from config file */
 	if (cfg_load(options.config_file, &schedule) == -1)
 		exit(EXIT_FAILURE);
 
-	log_options(&options);
+	/* initialize hold, advance, resume controls */
+	if (ctrls_init(&schedule) == -1)
+		exit(EXIT_FAILURE);
 
-	tstat_control(line, i2c_fd, &schedule, options.data_dir,
-		options.data_interval);
+	tstat_control(line, i2c_fd, &schedule,
+		      options.data_dir, options.data_interval);
 
 	close_i2c(i2c_fd);
 	close_gpio(chip, line);

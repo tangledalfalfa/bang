@@ -53,7 +53,6 @@ sched_get_setpoint(time_t now, const struct schedule_str *schedule)
 	size_t i;
 
 	sow = sse_to_sow(now);
-	//printf("sow: %ld\n", sow);
 
 	/* find next event */
 	/* FIXME: binary search more efficient... */
@@ -61,8 +60,12 @@ sched_get_setpoint(time_t now, const struct schedule_str *schedule)
 		if (schedule->event[i].sow > sow)
 			break;
 
-	/* back up one (events are circular) */
-	i = (i == 0) ? schedule->num_events - 1 : i - 1;
+	/* i is now 0..num_events */
+	if (schedule->advance_flag)
+		i %= schedule->num_events;
+	else
+		/* back up one (0 goes to last) */
+		i = (i == 0) ? schedule->num_events - 1 : i - 1;
 
 	return schedule->event[i].setpoint_degc;
 }

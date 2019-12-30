@@ -39,6 +39,7 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mcp9808.h"
 #include "schedule.h"
 #include "cfgfile.h"
+#include "controls.h"
 
 #define N_AVG 60
 
@@ -60,6 +61,24 @@ struct state_str {
 /*
  * private functions
  */
+
+static int
+sync_to_second(struct state_str *state)
+{
+	if (wait_for_next_second() == -1) {
+		syslog(LOG_ERR, "wait: %s", strerror(errno));
+		return -1;
+	}
+
+	if (clock_gettime(CLOCK_REALTIME, &state->timestamp) == -1) {
+		syslog(LOG_ERR, "clock_gettime: %s", strerror(errno));
+		return -1;
+	}
+
+	state->sequence++;
+
+	return 0;
+}
 
 static int
 get_temperature(struct state_str *state, int mcp9808_fd)
@@ -87,6 +106,59 @@ get_temperature(struct state_str *state, int mcp9808_fd)
 }
 
 static int
+update_schedule(struct schedule_str *schedule)
+{
+	struct stat statbuf;
+	struct schedule_str temp_sched;
+	size_t i;
+
+	if (stat(schedule->config_fname, &statbuf) == -1) {
+		syslog(LOG_ERR,
+		       "stat(%s): %s",
+		       schedule->config_fname, strerror(errno));
+		return -1;
+	}
+
+	if (statbuf.st_mtim.tv_sec <= schedule->config_mtime)
+		return 0;
+
+	syslog(LOG_INFO, "updating schedule");
+
+	/* failure leaves schedule unchanged */
+	if (cfg_load(schedule->config_fname, &temp_sched) == -1)
+		return -1;
+
+	/* copy in new events */
+	schedule->num_events = temp_sched.num_events;
+	for (i = 0; i < schedule->num_events; i++)
+		schedule->event[i] = temp_sched.event[i];
+	schedule->config_mtime = temp_sched.config_mtime;
+
+	return 0;
+}
+
+static void
+update_sys(struct state_str *state, struct schedule_str *schedule)
+{
+	/* check controls (hold, advance, resume) */
+	if (ctrls_check(schedule) == -1)
+		syslog(LOG_ERR, "controls check failed!");
+
+	if (schedule->hold_flag) {
+		state->setpoint_degc = schedule->hold_temp_degc;
+	} else {
+		/*
+		 * check for config file update
+		 * soldier on if it fails
+		 */
+		if (update_schedule(schedule) == -1)
+			syslog(LOG_ERR, "schedule update failed!");
+		state->setpoint_degc = sched_get_setpoint(
+			state->timestamp.tv_sec, schedule);
+	}
+}
+
+static int
 set_heat_request(struct state_str *state, struct gpiod_line *line,
 		       bool req)
 {
@@ -97,6 +169,25 @@ set_heat_request(struct state_str *state, struct gpiod_line *line,
 	}
 
 	state->heat_req = req;
+
+	return 0;
+}
+
+static int
+control_temp(struct state_str *state, struct gpiod_line *line)
+{
+	/* wait for temperature average to settle */
+	if (state->sequence < ARRAY_SIZE(state->temp_arr))
+		;
+	else if ((!state->heat_req)
+		 && (state->temp_avg < state->setpoint_degc - HYST_DEGC)) {
+		if (set_heat_request(state, line, true) == -1)
+			return -1;
+	} else if ((state->heat_req)
+		   && (state->temp_avg > state->setpoint_degc)) {
+		if (set_heat_request(state, line, false) == -1)
+			return -1;
+	}
 
 	return 0;
 }
@@ -146,37 +237,6 @@ log_data(const struct state_str *state, const char *data_dir)
 	return 0;
 }
 
-static int
-update_schedule(struct schedule_str *schedule)
-{
-	struct stat statbuf;
-	struct schedule_str temp_sched;
-	size_t i;
-
-	if (stat(schedule->config_fname, &statbuf) == -1) {
-		syslog(LOG_ERR,
-		       "stat(%s): %s",
-		       schedule->config_fname, strerror(errno));
-		return -1;
-	}
-
-	if (statbuf.st_mtim.tv_sec <= schedule->config_mtime)
-		return 0;
-
-	syslog(LOG_INFO, "updating schedule");
-
-	/* failure leaves schedule unchanged */
-	if (cfg_load(schedule->config_fname, &temp_sched) == -1)
-		return -1;
-
-	schedule->num_events = temp_sched.num_events;
-	for (i = 0; i < schedule->num_events; i++)
-		schedule->event[i] = temp_sched.event[i];
-	schedule->config_mtime = temp_sched.config_mtime;
-
-	return 0;
-}
-
 /*
  * public functions
  */
@@ -192,50 +252,31 @@ tstat_control(struct gpiod_line *line, int mcp9808_fd,
 	};
 
 	memset(&state.temp_arr, 0, sizeof state.temp_arr);
+
+	/* start with heat off */
 	if (set_heat_request(&state, line, false) == -1)
 		return -1;
 
+	/* initialize setpoint */
+	state.setpoint_degc = sched_get_setpoint(time(NULL), schedule);
+
 	for (;;) {
-		if (wait_for_next_second() == -1) {
-			syslog(LOG_ERR, "wait: %s", strerror(errno));
+		/* 1 Hertz control loop */
+		if (sync_to_second(&state) == -1)
 			return -1;
-		}
 
-		if (clock_gettime(CLOCK_REALTIME, &state.timestamp) == -1) {
-			syslog(LOG_ERR, "clock_gettime: %s", strerror(errno));
-			return -1;
-		}
-
-		state.sequence++;
-
+		/* get new measurement, maintain 60-second average */
 		if (get_temperature(&state, mcp9808_fd) == -1)
 			return -1;
 
-		/* update setpoint first time, and at start of each minute */
-		if ((state.sequence == 1)
-		    || (state.timestamp.tv_sec % 60 == 0)) {
-			if (state.sequence != 1)
-				if (update_schedule(schedule) == -1)
-					syslog(LOG_ERR,
-					       "schedule update failed!");
-			state.setpoint_degc
-				= sched_get_setpoint(state.timestamp.tv_sec,
-						     schedule);
-		}
+		/* perform system updates */
+		update_sys(&state, schedule);
 
-		/* wait for temperature average to settle */
-		if (state.sequence < ARRAY_SIZE(state.temp_arr))
-			;
-		else if ((!state.heat_req)
-		    && (state.temp_avg < state.setpoint_degc - HYST_DEGC)) {
-			if (set_heat_request(&state, line, true) == -1)
-				return -1;
-		} else if ((state.heat_req)
-			   && (state.temp_avg > state.setpoint_degc)) {
-			if (set_heat_request(&state, line, false) == -1)
-				return -1;
-		}
+		/* bang-bang controller */
+		if (control_temp(&state, line) == -1)
+			return -1;
 
+		/* log data (if requested) */
 		if ((data_interval != 0)
 		    && (state.timestamp.tv_sec % data_interval == 0))
 			log_data(&state, data_dir);

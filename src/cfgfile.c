@@ -311,6 +311,7 @@ compare_events(const struct event_str *event1,
 		return 0;
 }
 
+/* record schedule to syslog */
 static void
 log_schedule(const struct schedule_str *schedule)
 {

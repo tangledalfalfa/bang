@@ -26,6 +26,11 @@ struct schedule_str {
 	bool advance_flag;
 	const char *config_fname; /* need to check for config file updates */
 	time_t config_mtime;	  /* config file time of last modification */
+	/* control files: hold, advance, and resume */
+	const char *ctrl_dir;
+	time_t hold_mtime;
+	time_t advance_mtime;
+	time_t resume_mtime;
 };
 
 /*
