@@ -111,7 +111,7 @@ check_hold(struct schedule_str *schedule)
 	else if (schedule->units == UNITS_AUTO)
 		hold_temp = deg_to_degc_auto(hold_temp);
 
-	schedule->hold_temp_degc = hold_temp; /* FIXME: units */
+	schedule->hold_temp_degc = hold_temp;
 	schedule->hold_flag = true;
 
 	free(path);

@@ -44,7 +44,7 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #define N_AVG 60
 
 #ifndef HYST_DEGC
-#define HYST_DEGC 0.5f
+#define HYST_DEGC 0.5
 #endif
 
 struct state_str {
@@ -195,8 +195,8 @@ control_temp(struct state_str *state, struct gpiod_line *line)
 }
 
 static int
-log_data(const struct state_str *state, const char *data_dir,
-	 enum units_enum units)
+log_data(const struct state_str *state, const struct schedule_str *schedule,
+	 const char *data_dir)
 {
 	FILE *out;
 	struct tm bdt;		/* broken down time */
@@ -221,7 +221,7 @@ log_data(const struct state_str *state, const char *data_dir,
 		return -1;
 	}
 
-	if (units == UNITS_DEGF) {
+	if (schedule->units == UNITS_DEGF) {
 		temp = degc_to_degf(state->temp_degc);
 		temp_avg = degc_to_degf(state->temp_avg);
 		setpoint = degc_to_degf(state->setpoint_degc);
@@ -231,7 +231,7 @@ log_data(const struct state_str *state, const char *data_dir,
 		setpoint = state->setpoint_degc;
 	}
 
-	fprintf(out, "%7lu %10ld %9ld %s %7.4f %7.4f %4.1f %d\n",
+	fprintf(out, "%7lu %10ld %9ld %s %7.4f %7.4f %4.1f %d %d %d\n",
 		state->sequence,
 		state->timestamp.tv_sec,
 		state->timestamp.tv_nsec,
@@ -239,7 +239,9 @@ log_data(const struct state_str *state, const char *data_dir,
 		temp,
 		temp_avg,
 		setpoint,
-		state->heat_req);
+		state->heat_req,
+		schedule->hold_flag,
+		schedule->advance_flag);
 
 	if (out != stdout) {
 		if (fclose(out) == EOF) {
@@ -293,7 +295,7 @@ tstat_control(struct gpiod_line *line, int mcp9808_fd,
 		/* log data (if requested) */
 		if ((data_interval != 0)
 		    && (state.timestamp.tv_sec % data_interval == 0))
-			log_data(&state, data_dir, schedule->units);
+			log_data(&state, schedule, data_dir);
 	}
 
 	return 0;
