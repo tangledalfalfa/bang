@@ -66,17 +66,24 @@ update_mask(const char *from_buf, const char *to_buf, uint8_t *mask)
 {
 	int from_idx, to_idx, idx;
 
+	/* special handling for "all" */
+	if (memcmp(from_buf, "all", 3) == 0) {
+		*mask = 0x7F;
+		return 0;
+	}
+
 	from_idx = get_day_index(from_buf);
 	to_idx = get_day_index(to_buf);
 
 	if ((from_idx == -1) || (to_idx == -1))
 		return -1;
 
+	/* support wrapping, e.g. fri-mon */
 	if (to_idx < from_idx)
 		to_idx += 7;
 
 	for (idx = from_idx; idx <= to_idx; idx++)
-		*mask |= (1 << (idx % 7));
+		*mask |= (1 << (idx % 7)); /* modulo for "wrapped" days */
 
 	return 0;
 }
@@ -88,6 +95,7 @@ update_mask(const char *from_buf, const char *to_buf, uint8_t *mask)
  *    mon,wed,fri
  *    mon-wed,sat
  *    fri-mon
+ *    all
  * etc.
  */
 
@@ -106,6 +114,7 @@ parse_day(const char *day_spec, uint8_t *mask)
 	while (*day_spec && (state != ST_ERROR)) {
 		int ct;
 
+		/* get char type: alpha, space, dash, comma or other */
 		ct = get_char_type(*day_spec);
 
 		switch (state) {
@@ -132,6 +141,7 @@ parse_day(const char *day_spec, uint8_t *mask)
 				idx = 0;
 				state = ST_DASH;
 			} else if (ct == CT_COMMA) {
+				/* single day: copy from -> to */
 				memcpy(to_buf, from_buf, sizeof to_buf);
 				if (update_mask(from_buf, to_buf, mask) == -1) {
 					state = ST_ERROR;
