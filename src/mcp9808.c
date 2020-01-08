@@ -68,11 +68,20 @@ mcp9808_read_temp(int fd, uint16_t *raw, double *temp)
 		*raw = (rbuf[0] << 8) | rbuf[1];
 
 	if (temp != NULL) {
-		rbuf[0] &= 0x1F; /* clear flags */
+		uint16_t ut;
+		int st;
 
-		*temp = (rbuf[0] & 0x0F) * 16.0 + rbuf[1] / 16.0;
-		if (rbuf[0] & 0x10) /* sign bit */
-			*temp = 256.0 - *temp;
+		/*
+		 * 13-bit signed, in 16ths of degree C (big-endian)
+		 * first 3 bits are flags, ignored
+		 */
+		ut = ((rbuf[0] & 0x1F) << 8) | rbuf[1];
+		if (rbuf[0] & 0x10)
+			st = (int)ut - (1U << 13); /* negative */
+		else
+			st = ut;                   /* positive */
+
+		*temp = (double)st / 16.0;
 	}
 
 	return 0;
