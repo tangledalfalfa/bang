@@ -136,6 +136,9 @@ check_advance(struct schedule_str *schedule)
 
 	schedule->advance_flag = true;
 
+	/* this overrides any HOLD in effect */
+	schedule->hold_flag = false;
+
 	return 0;
 }
 
