@@ -96,6 +96,7 @@ update_mask(const char *from_buf, const char *to_buf, uint8_t *mask)
  *    mon-wed,sat
  *    fri-mon
  *    all
+ *    Tuesday, Thursday
  * etc.
  */
 
@@ -131,10 +132,9 @@ parse_day(const char *day_spec, uint8_t *mask)
 		case ST_FROM:
 
 			if (ct == CT_ALPHA) {
+				/* ignore additional char ("tuesday" is OK) */
 				if (idx < sizeof from_buf)
 					from_buf[idx++] = tolower(*day_spec);
-				else
-					state = ST_ERROR;
 			} else if (idx < sizeof from_buf) {
 				state = ST_ERROR;
 			} else if (ct == CT_DASH) {
@@ -167,10 +167,9 @@ parse_day(const char *day_spec, uint8_t *mask)
 		case ST_TO:
 
 			if (ct == CT_ALPHA) {
+				/* ignore additional chars */
 				if (idx < sizeof to_buf)
 					to_buf[idx++] = tolower(*day_spec);
-				else
-					state = ST_ERROR;
 			} else if (idx < sizeof to_buf) {
 				state = ST_ERROR;
 			} else if (ct == CT_COMMA) {
