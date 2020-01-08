@@ -347,7 +347,7 @@ log_schedule(const struct schedule_str *schedule)
 
 	for (i = 0; i < schedule->num_events; i++) {
 		syslog(LOG_INFO,
-		       "%3u %6ld %4.1f",
+		       "%3zu %6ld %4.1f",
 		       i, schedule->event[i].sow,
 		       schedule->event[i].setpoint_degc);
 	}
