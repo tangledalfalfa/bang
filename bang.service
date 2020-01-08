@@ -3,7 +3,7 @@ Description=bang thermostat
 After=network.target
 
 [Service]
-ExecStart=/home/ta/gitrepos/bang/src/bang --data-dir=/home/ta/banglog --data-int=10 --config=/home/ta/gitrepos/bang/bang.cfg --ctrl-dir=/home/ta/.bang
+ExecStart=/home/ta/bin/bang --data-dir=/home/ta/banglog --data-int=10 --config=/home/ta/gitrepos/bang/bang.cfg --ctrl-dir=/home/ta/.bang
 WorkingDirectory=/home/ta
 StandardOutput=inherit
 StandardError=inherit
