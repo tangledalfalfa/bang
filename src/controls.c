@@ -114,6 +114,9 @@ check_hold(struct schedule_str *schedule)
 	schedule->hold_temp_degc = hold_temp;
 	schedule->hold_flag = true;
 
+	/* this overrides any ADVANCE in effect */
+	schedule->advance_flag = false;
+
 	free(path);
 
 	return 0;
