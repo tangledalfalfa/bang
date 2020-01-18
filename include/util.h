@@ -57,4 +57,10 @@ wait_for_next_second(void);
 FILE *
 open_dayfile(const char *data_dir, const struct tm *timestamp);
 
+/*
+ * get modification time of given file
+ */
+int
+get_mtime(const char *fname, time_t *mtime);
+
 #endif

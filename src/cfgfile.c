@@ -68,7 +68,7 @@ update_mask(const char *from_buf, const char *to_buf, uint8_t *mask)
 
 	/* special handling for "all" */
 	if (memcmp(from_buf, "all", 3) == 0) {
-		*mask = 0x7F;
+		*mask = 0x7F;	/* flag all 7 days */
 		return 0;
 	}
 
@@ -248,22 +248,27 @@ load_time(config_setting_t *time_setting,
 }
 
 static int
-update_events(struct schedule_str *schedule, uint8_t day_mask,
+update_events(struct cfg_data_str *cfg_data, uint8_t day_mask,
 	      int hour, int minute, double setpoint)
 {
 	uint8_t mask;
 	long day;
 
+	/*
+	 * this makes potentially multiple copies of events,
+	 * one for each day specified
+	 */
 	for (day = 0, mask = 0x01; mask != 0x80; day++, mask <<= 1) {
 		if (mask & day_mask) {
-			if (schedule->num_events == ARRAY_SIZE(schedule->event))
+			if (cfg_data->num_events == ARRAY_SIZE(cfg_data->event))
+				/* FIXME: this should be logged */
 				return -1;
 
-			schedule->event[schedule->num_events].sow
+			cfg_data->event[cfg_data->num_events].sow
 				= (((day * 24) + hour) * 60 + minute) * 60;
-			schedule->event[schedule->num_events].setpoint_degc
+			cfg_data->event[cfg_data->num_events].setpoint_degc
 				= setpoint;
-			schedule->num_events++;
+			cfg_data->num_events++;
 		}
 	}
 
@@ -282,7 +287,7 @@ to_degc(double temp, enum units_enum units)
 }
 
 static int
-load_event(config_setting_t *event_setting, struct schedule_str *schedule)
+load_event(config_setting_t *event_setting, struct cfg_data_str *cfg_data)
 {
 	config_setting_t *time_setting;
 	uint8_t day_mask;
@@ -311,9 +316,9 @@ load_event(config_setting_t *event_setting, struct schedule_str *schedule)
 		       config_setting_source_line(event_setting));
 		return -1;
 	}
-	setpoint = to_degc(setpoint, schedule->units);
+	setpoint = to_degc(setpoint, cfg_data->units);
 
-	if (update_events(schedule, day_mask, hour, minute, setpoint) == -1)
+	if (update_events(cfg_data, day_mask, hour, minute, setpoint) == -1)
 		return -1;
 
 	//printf("%f deg\n", setpoint);
@@ -336,21 +341,20 @@ compare_events(const struct event_str *event1,
 
 /* record schedule to syslog */
 static void
-log_schedule(const struct schedule_str *schedule)
+log_schedule(const struct cfg_data_str *cfg_data)
 {
 	size_t i;
 	char *units;
 
-	units = (schedule->units == UNITS_DEGC) ? "deg C"
-		: (schedule->units == UNITS_DEGF) ? "deg F" : "auto";
+	units = (cfg_data->units == UNITS_DEGC) ? "deg C"
+		: (cfg_data->units == UNITS_DEGF) ? "deg F" : "auto";
 	syslog(LOG_INFO, "units: %s", units);
 
-	for (i = 0; i < schedule->num_events; i++) {
+	for (i = 0; i < cfg_data->num_events; i++)
 		syslog(LOG_INFO,
 		       "%3zu %6ld %4.1f",
-		       i, schedule->event[i].sow,
-		       schedule->event[i].setpoint_degc);
-	}
+		       i, cfg_data->event[i].sow,
+		       cfg_data->event[i].setpoint_degc);
 }
 
 /*
@@ -358,21 +362,21 @@ log_schedule(const struct schedule_str *schedule)
  */
 
 int
-cfg_load(const char *fname, struct schedule_str *schedule)
+cfg_load(const char *fname, struct cfg_data_str *cfg_data)
 {
-	struct stat statbuf;
 	config_t cfg;
 	config_setting_t *schedule_setting;
 	int i, count;
 	const char *units;
 
+	cfg_data->fname = fname;
+
 	/* initialize config file modification time */
-	if (stat(fname, &statbuf) == -1) {
-		syslog(LOG_ERR, "stat(%s): %s",
+	if (get_mtime(fname, &cfg_data->mtime) == -1) {
+		syslog(LOG_ERR, "get_mtime(%s): %s",
 		       fname, strerror(errno));
-		exit(EXIT_FAILURE);
+		return -1;
 	}
-	schedule->config_mtime = statbuf.st_mtim.tv_sec;
 
 	config_init(&cfg);
 
@@ -389,10 +393,10 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 
 		/* just look at the first char */
 		c = tolower(*units);
-		schedule->units = (c == 'c') ? UNITS_DEGC
+		cfg_data->units = (c == 'c') ? UNITS_DEGC
 			: (c == 'f') ? UNITS_DEGF : UNITS_AUTO;
 	} else {
-		schedule->units = UNITS_AUTO; /* defaults to AUTO */
+		cfg_data->units = UNITS_AUTO; /* defaults to AUTO */
 	}
 
 	schedule_setting = config_lookup(&cfg, "schedule");
@@ -403,7 +407,7 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 		return -1;
 	}
 
-	schedule->num_events = 0;
+	cfg_data->num_events = 0;
         count = config_setting_length(schedule_setting);
 	if (count == 0) {
 		syslog(LOG_ERR, "file %s: schedule is empty",
@@ -415,7 +419,7 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 		config_setting_t *event_setting;
 
 		event_setting = config_setting_get_elem(schedule_setting, i);
-		if (load_event(event_setting, schedule) == -1) {
+		if (load_event(event_setting, cfg_data) == -1) {
 			config_destroy(&cfg);
 			return -1;
 		}
@@ -423,11 +427,11 @@ cfg_load(const char *fname, struct schedule_str *schedule)
 
 	config_destroy(&cfg);
 
-	qsort(schedule->event, schedule->num_events,
-	      sizeof schedule->event[0],
+	qsort(cfg_data->event, cfg_data->num_events,
+	      sizeof cfg_data->event[0],
 	      (int (*)(const void *, const void *))compare_events);
 
-	log_schedule(schedule);
+	log_schedule(cfg_data);
 
 	return 0;
 }

@@ -29,6 +29,9 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "schedule.h"
 
+#define SEC_PER_DAY (24 * 60 * 60)
+#define SEC_PER_WEEK (7 * SEC_PER_DAY)
+
 /* calculate seconds-of-week, in local time */
 static long
 sse_to_sow(time_t sse)
@@ -37,9 +40,30 @@ sse_to_sow(time_t sse)
 
 	localtime_r(&sse, &bdt); /* for tm_gmtoff */
 
-	sse -= 3 * (24 * 60 * 60); /* January 1 1970 was a Thursday */
-	sse += bdt.tm_gmtoff;	   /* adjust to local time */
-	return sse % (7 * 24 * 60 * 60);
+	sse -= 3 * SEC_PER_DAY;	/* January 1 1970 was a Thursday */
+	sse += bdt.tm_gmtoff;	/* adjust to local time */
+	return sse % SEC_PER_WEEK;
+}
+
+/* find event containing current setpoint, set curr_idx */
+static void
+init_index(long now_sow, struct schedule_str *schedule)
+{
+	size_t i;
+
+	/* find next (upcoming) event */
+	for (i = 0; i < schedule->config.num_events; i++)
+		if (schedule->config.event[i].sow > now_sow)
+			break;
+	/* i is now 0..num_events */
+
+	/* back up one (0 wraps back to last) */
+	if (i == 0)
+		i = schedule->config.num_events - 1;
+	else
+		i--;
+
+	schedule->curr_idx = i;
 }
 
 /*
@@ -47,36 +71,57 @@ sse_to_sow(time_t sse)
  */
 
 double
-sched_get_setpoint(time_t now, struct schedule_str *schedule)
+sched_get_setpoint(time_t now_sse, struct schedule_str *schedule)
 {
-	long sow;		/* current second-of-week */
-	size_t i;
+	long now_sow;		/* current second-of-week */
+	size_t idx;
 
-	sow = sse_to_sow(now);
+	now_sow = sse_to_sow(now_sse);
 
-	/* find next (upcoming) event */
-	/* FIXME: binary search more efficient... */
-	for (i = 0; i < schedule->num_events; i++)
-		if (schedule->event[i].sow > sow)
-			break;
-	/* i is now 0..num_events */
-
-	/* back up one (0 goes to last) */
-	if (i == 0)
-		i = schedule->num_events - 1;
-	else
-		i--;
-
-	if (schedule->curr_sow == -1) {
-		schedule->curr_sow = schedule->event[i].sow;
-	} else if (schedule->curr_sow != schedule->event[i].sow) {
-		schedule->curr_sow = schedule->event[i].sow;
-		/* advance only lasts until next event */
+	if (schedule->curr_idx == -1) {
+		/* initialize index */
+		init_index(now_sow, schedule);
+		/* cancel advance mode for new schedule */
 		schedule->advance_flag = false;
+	} else {
+		/* update index */
+		long t_0;	/* current time */
+		long t_1;	/* time of upcoming event */
+		size_t next_idx;
+
+		t_0 = now_sow;
+
+		/* t_1 is the time of the upcoming event */
+		next_idx = (schedule->curr_idx + 1)
+			% schedule->config.num_events;
+		t_1 = schedule->config.event[next_idx].sow;
+
+		/*
+		 * There's a chance that t_0, t_1 wrapped back
+		 * at Sunday midnight since the previous schedule
+		 * check. Unwrap these.
+		 */
+		if (t_0 < schedule->curr_sow)
+			t_0 += SEC_PER_WEEK;
+
+		if (t_1 < schedule->curr_sow)
+			t_1 += SEC_PER_WEEK;
+
+		/* detect event: current time >= time of next event */
+		if (t_0 >= t_1) {
+			schedule->curr_idx = next_idx;
+			/* cancel advance mode at event boundary */
+			schedule->advance_flag = false;
+		}
 	}
 
-	if (schedule->advance_flag)
-		i = (i + 1) % schedule->num_events;
+	schedule->curr_sow = now_sow; /* update the current time */
 
-	return schedule->event[i].setpoint_degc;
+	/* implement advance mode */
+	if (schedule->advance_flag)
+		idx = (schedule->curr_idx + 1) % schedule->config.num_events;
+	else
+		idx = schedule->curr_idx;
+
+	return schedule->config.event[idx].setpoint_degc;
 }

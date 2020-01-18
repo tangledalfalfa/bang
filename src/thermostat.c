@@ -108,33 +108,34 @@ get_temperature(struct state_str *state, int mcp9808_fd)
 static int
 update_schedule(struct schedule_str *schedule)
 {
-	struct stat statbuf;
-	struct schedule_str temp_sched;
+	struct cfg_data_str cfg_data;
+	time_t mtime;
 	size_t i;
 
-	if (stat(schedule->config_fname, &statbuf) == -1) {
+	if (get_mtime(schedule->config.fname, &mtime) == -1) {
 		syslog(LOG_ERR,
-		       "stat(%s): %s",
-		       schedule->config_fname, strerror(errno));
+		       "get_mtime(%s): %s",
+		       schedule->config.fname, strerror(errno));
 		return -1;
 	}
 
-	if (statbuf.st_mtim.tv_sec <= schedule->config_mtime)
+	if (mtime <= schedule->config.mtime)
 		return 0;
 
 	syslog(LOG_INFO, "updating schedule");
 
 	/* failure leaves schedule unchanged */
-	if (cfg_load(schedule->config_fname, &temp_sched) == -1)
+	if (cfg_load(schedule->config.fname, &cfg_data) == -1)
 		return -1;
 
 	/* copy in new events */
-	schedule->num_events = temp_sched.num_events;
-	for (i = 0; i < schedule->num_events; i++)
-		schedule->event[i] = temp_sched.event[i];
-	schedule->config_mtime = temp_sched.config_mtime;
+	schedule->config.units = cfg_data.units;
+	schedule->config.num_events = cfg_data.num_events;
+	for (i = 0; i < schedule->config.num_events; i++)
+		schedule->config.event[i] = cfg_data.event[i];
+	schedule->config.mtime = cfg_data.mtime;
 
-	schedule->units = temp_sched.units;
+	schedule->curr_idx = -1; /* new schedule */
 
 	return 0;
 }
@@ -221,7 +222,7 @@ log_data(const struct state_str *state, const struct schedule_str *schedule,
 		return -1;
 	}
 
-	if (schedule->units == UNITS_DEGF) {
+	if (schedule->config.units == UNITS_DEGF) {
 		temp = degc_to_degf(state->temp_degc);
 		temp_avg = degc_to_degf(state->temp_avg);
 		setpoint = degc_to_degf(state->setpoint_degc);
@@ -272,6 +273,8 @@ tstat_control(struct gpiod_line *line, int mcp9808_fd,
 	/* start with heat off */
 	if (set_heat_request(&state, line, false) == -1)
 		return -1;
+
+	schedule->curr_idx = -1; /* reset schedule */
 
 	/* initialize setpoint */
 	state.setpoint_degc = sched_get_setpoint(time(NULL), schedule);

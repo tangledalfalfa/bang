@@ -35,7 +35,7 @@
  */
 
 static int
-get_mtime(const char *ctrl_dir, const char *fname, time_t *mtime)
+get_modtime(const char *ctrl_dir, const char *fname, time_t *mtime)
 {
 	char *path;
 	struct stat statbuf;
@@ -70,7 +70,7 @@ check_hold(struct schedule_str *schedule)
 	float hold_temp;
 	int ret;
 
-	if (get_mtime(schedule->ctrl_dir, CTRL_FNAME_HOLD, &mtime) == -1)
+	if (get_modtime(schedule->ctrl_dir, CTRL_FNAME_HOLD, &mtime) == -1)
 		return -1;
 
 	if (mtime <= schedule->hold_mtime)
@@ -106,9 +106,9 @@ check_hold(struct schedule_str *schedule)
 	syslog(LOG_INFO, "HOLD: %.2f", hold_temp);
 
 	/* convert to deg C if needed */
-	if (schedule->units == UNITS_DEGF)
+	if (schedule->config.units == UNITS_DEGF)
 		hold_temp = degf_to_degc(hold_temp);
-	else if (schedule->units == UNITS_AUTO)
+	else if (schedule->config.units == UNITS_AUTO)
 		hold_temp = deg_to_degc_auto(hold_temp);
 
 	schedule->hold_temp_degc = hold_temp;
@@ -124,7 +124,7 @@ check_advance(struct schedule_str *schedule)
 {
 	time_t mtime;
 
-	if (get_mtime(schedule->ctrl_dir, CTRL_FNAME_ADVANCE, &mtime) == -1)
+	if (get_modtime(schedule->ctrl_dir, CTRL_FNAME_ADVANCE, &mtime) == -1)
 		return -1;
 
 	if (mtime <= schedule->advance_mtime)
@@ -147,7 +147,7 @@ check_resume(struct schedule_str *schedule)
 {
 	time_t mtime;
 
-	if (get_mtime(schedule->ctrl_dir, CTRL_FNAME_RESUME, &mtime) == -1)
+	if (get_modtime(schedule->ctrl_dir, CTRL_FNAME_RESUME, &mtime) == -1)
 		return -1;
 
 	if (mtime <= schedule->resume_mtime)
@@ -170,19 +170,19 @@ check_resume(struct schedule_str *schedule)
 int
 ctrls_init(struct schedule_str *schedule)
 {
-	if (get_mtime(schedule->ctrl_dir, CTRL_FNAME_HOLD,
+	if (get_modtime(schedule->ctrl_dir, CTRL_FNAME_HOLD,
 		    &schedule->hold_mtime) == -1)
 		return -1;
 
-	if (get_mtime(schedule->ctrl_dir, CTRL_FNAME_ADVANCE,
+	if (get_modtime(schedule->ctrl_dir, CTRL_FNAME_ADVANCE,
 		    &schedule->advance_mtime) == -1)
 		return -1;
 
-	if (get_mtime(schedule->ctrl_dir, CTRL_FNAME_RESUME,
+	if (get_modtime(schedule->ctrl_dir, CTRL_FNAME_RESUME,
 		    &schedule->resume_mtime) == -1)
 		return -1;
 
-	schedule->curr_sow = -1;
+	schedule->hold_flag = schedule->advance_flag = false;
 
 	return 0;
 }
