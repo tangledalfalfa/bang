@@ -511,9 +511,7 @@ main(int argc, char *argv[])
 	    || (validate_options(&options) == -1))
 		exit(EXIT_FAILURE);
 
-	/* schedule initializations */
-	schedule.config_fname = options.config_file;
-	schedule.hold_flag = schedule.advance_flag = false;
+	/* set control directory from options */
 	schedule.ctrl_dir = options.ctrl_dir;
 
 	if (open_gpio(&options, &chip, &line) == -1)
@@ -537,8 +535,8 @@ main(int argc, char *argv[])
 
 	log_options(&options);
 
-	/* load schedule from config file */
-	if (cfg_load(options.config_file, &schedule) == -1)
+	/* load config file */
+	if (cfg_load(options.config_file, &schedule.config) == -1)
 		exit(EXIT_FAILURE);
 
 	/* initialize hold, advance, resume controls */
@@ -547,6 +545,7 @@ main(int argc, char *argv[])
 
 	tstat_control(line, i2c_fd, &schedule,
 		      options.data_dir, options.data_interval);
+	/* should never get here */
 
 	close_i2c(i2c_fd);
 	close_gpio(chip, line);

@@ -28,6 +28,8 @@ this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <time.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include "util.h"
 
@@ -144,4 +146,20 @@ open_dayfile(const char *data_dir, const struct tm *timestamp)
 	free(path);
 
 	return result;
+}
+
+
+/* get modification time of given file */
+int
+get_mtime(const char *fname, time_t *mtime)
+{
+	struct stat statbuf;
+
+	if (stat(fname, &statbuf) == -1)
+		return -1;
+
+	if (mtime)
+		*mtime = statbuf.st_mtim.tv_sec;
+
+	return 0;
 }
