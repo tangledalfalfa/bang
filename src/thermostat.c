@@ -114,7 +114,7 @@ update_schedule(struct schedule_str *schedule)
 
 	if (get_mtime(schedule->config.fname, &mtime) == -1) {
 		syslog(LOG_ERR,
-		       "get_mtime(%s): %s",
+		       "update_sched - get_mtime(%s): %s",
 		       schedule->config.fname, strerror(errno));
 		return -1;
 	}

@@ -373,7 +373,7 @@ cfg_load(const char *fname, struct cfg_data_str *cfg_data)
 
 	/* initialize config file modification time */
 	if (get_mtime(fname, &cfg_data->mtime) == -1) {
-		syslog(LOG_ERR, "get_mtime(%s): %s",
+		syslog(LOG_ERR, "cfg_load - get_mtime(%s): %s",
 		       fname, strerror(errno));
 		return -1;
 	}

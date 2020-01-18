@@ -491,6 +491,7 @@ log_options(const struct options_str *options)
 	syslog(LOG_INFO, "    i2c-addr: 0x%02X", options->mcp9808_i2c_addr);
 	syslog(LOG_INFO, "    data-dir: %s",
 	       (options->data_dir == NULL) ? "stdout" : options->data_dir);
+	syslog(LOG_INFO, "    data-int: %d", options->data_interval);
 	syslog(LOG_INFO, "    config: %s", options->config_file);
 	syslog(LOG_INFO, "    ctrl-dir: %s", options->ctrl_dir);
 	syslog(LOG_INFO, "    force: %s", options->force ? "true" : "false");
