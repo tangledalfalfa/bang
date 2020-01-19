@@ -81,7 +81,8 @@ sched_get_setpoint(time_t now_sse, struct schedule_str *schedule)
 	if (schedule->curr_idx == -1) {
 		/* initialize index */
 		init_index(now_sow, schedule);
-		/* cancel advance mode for new schedule */
+		/* cancel override, advance modes for new schedule */
+		schedule->override_flag = false;
 		schedule->advance_flag = false;
 	} else {
 		/* update index */
@@ -110,15 +111,18 @@ sched_get_setpoint(time_t now_sse, struct schedule_str *schedule)
 		/* detect event: current time >= time of next event */
 		if (t_0 >= t_1) {
 			schedule->curr_idx = next_idx;
-			/* cancel advance mode at event boundary */
+			/* cancel override, advance modes at event boundary */
+			schedule->override_flag = false;
 			schedule->advance_flag = false;
 		}
 	}
 
 	schedule->curr_sow = now_sow; /* update the current time */
 
-	/* implement advance mode */
-	if (schedule->advance_flag)
+	/* implement override, advance mode */
+	if (schedule->override_flag)
+		return schedule->override_temp_degc;
+	else if (schedule->advance_flag)
 		idx = (schedule->curr_idx + 1) % schedule->config.num_events;
 	else
 		idx = schedule->curr_idx;

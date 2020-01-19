@@ -22,6 +22,10 @@
 #define CTRL_FNAME_HOLD    "hold"
 #endif
 
+#ifndef CTRL_FNAME_OVERRIDE
+#define CTRL_FNAME_OVERRIDE "override"
+#endif
+
 #ifndef CTRL_FNAME_ADVANCE
 #define CTRL_FNAME_ADVANCE "advance"
 #endif
@@ -62,13 +66,56 @@ get_modtime(const char *ctrl_dir, const char *fname, time_t *mtime)
 }
 
 static int
+read_temp_degc(struct schedule_str *schedule, const char *fname,
+	double *temp_degc)
+{
+	char *path;
+	FILE *infile;
+	int ret;
+	float temp;
+
+	if (asprintf(&path, "%s/%s",
+		     schedule->ctrl_dir, fname) == -1) {
+		syslog(LOG_ERR,
+		       "asprintf(%s/%s): %s",
+		       schedule->ctrl_dir, fname, strerror(errno));
+		return -1;
+	}
+
+	infile = fopen(path, "r");
+	if (infile == NULL) {
+		syslog(LOG_ERR, "read temp, fopen(%s): %s",
+		       path, strerror(errno));
+		free(path);
+		return -1;
+	}
+
+	ret = fscanf(infile, " %f", &temp);
+	if (ret != 1) {
+		syslog(LOG_INFO, "failed to read temp from %s",
+		       path);
+		free(path);
+		return 0;
+	}
+
+	free(path);
+
+	/* convert to deg C if needed */
+	if (schedule->config.units == UNITS_DEGF)
+		temp = degf_to_degc(temp);
+	else if (schedule->config.units == UNITS_AUTO)
+		temp = deg_to_degc_auto(temp);
+
+	if (temp_degc)
+		*temp_degc = temp;
+
+	return 0;
+}
+
+static int
 check_hold(struct schedule_str *schedule)
 {
 	time_t mtime;
-	char *path;
-	FILE *hold_file;
-	float hold_temp;
-	int ret;
 
 	if (get_modtime(schedule->ctrl_dir, CTRL_FNAME_HOLD, &mtime) == -1)
 		return -1;
@@ -79,45 +126,48 @@ check_hold(struct schedule_str *schedule)
 	/* update mtime so we don't do it again */
 	schedule->hold_mtime = mtime;
 
-	if (asprintf(&path, "%s/%s",
-		     schedule->ctrl_dir, CTRL_FNAME_HOLD) == -1) {
-		syslog(LOG_ERR,
-		       "asprintf(%s/%s): %s",
-		       schedule->ctrl_dir, CTRL_FNAME_HOLD, strerror(errno));
+	/* input setpoint from file */
+	if (read_temp_degc(schedule, CTRL_FNAME_HOLD,
+			   &schedule->hold_temp_degc) == -1)
 		return -1;
-	}
 
-	hold_file = fopen(path, "r");
-	if (hold_file == NULL) {
-		syslog(LOG_ERR, "check hold, fopen(%s): %s",
-		       path, strerror(errno));
-		free(path);
-		return -1;
-	}
-
-	ret = fscanf(hold_file, " %f", &hold_temp);
-	if (ret != 1) {
-		syslog(LOG_INFO, "failed to read hold temp from %s",
-		       path);
-		free(path);
-		return 0;
-	}
-
-	syslog(LOG_INFO, "HOLD: %.2f", hold_temp);
-
-	/* convert to deg C if needed */
-	if (schedule->config.units == UNITS_DEGF)
-		hold_temp = degf_to_degc(hold_temp);
-	else if (schedule->config.units == UNITS_AUTO)
-		hold_temp = deg_to_degc_auto(hold_temp);
-
-	schedule->hold_temp_degc = hold_temp;
 	schedule->hold_flag = true;
 
-	/* this overrides any ADVANCE in effect */
+	syslog(LOG_INFO, "HOLD: %.2f", schedule->hold_temp_degc);
+
+	/* this overrides any OVERRIDE, ADVANCE in effect */
+	schedule->override_flag = false;
 	schedule->advance_flag = false;
 
-	free(path);
+	return 0;
+}
+
+static int
+check_override(struct schedule_str *schedule)
+{
+	time_t mtime;
+
+	if (get_modtime(schedule->ctrl_dir, CTRL_FNAME_OVERRIDE, &mtime) == -1)
+		return -1;
+
+	if (mtime <= schedule->override_mtime)
+		return 0;
+
+	/* update mtime so we don't do it again */
+	schedule->override_mtime = mtime;
+
+	/* input setpoint from file */
+	if (read_temp_degc(schedule, CTRL_FNAME_OVERRIDE,
+			   &schedule->override_temp_degc) == -1)
+		return -1;
+
+	schedule->override_flag = true;
+
+	syslog(LOG_INFO, "OVERRIDE: %.2f", schedule->override_temp_degc);
+
+	/* this overrides any HOLD, ADVANCE in effect */
+	schedule->hold_flag = false;
+	schedule->advance_flag = false;
 
 	return 0;
 }
@@ -139,8 +189,9 @@ check_advance(struct schedule_str *schedule)
 
 	schedule->advance_flag = true;
 
-	/* this overrides any HOLD in effect */
+	/* this overrides any HOLD, OVERRIDE in effect */
 	schedule->hold_flag = false;
+	schedule->override_flag = false;
 
 	return 0;
 }
@@ -161,6 +212,7 @@ check_resume(struct schedule_str *schedule)
 	syslog(LOG_INFO, "RESUME");
 
 	schedule->hold_flag = false;
+	schedule->override_flag = false;
 	schedule->advance_flag = false;
 
 	return 0;
@@ -177,6 +229,10 @@ ctrls_init(struct schedule_str *schedule)
 		    &schedule->hold_mtime) == -1)
 		return -1;
 
+	if (get_modtime(schedule->ctrl_dir, CTRL_FNAME_OVERRIDE,
+		    &schedule->override_mtime) == -1)
+		return -1;
+
 	if (get_modtime(schedule->ctrl_dir, CTRL_FNAME_ADVANCE,
 		    &schedule->advance_mtime) == -1)
 		return -1;
@@ -185,7 +241,8 @@ ctrls_init(struct schedule_str *schedule)
 		    &schedule->resume_mtime) == -1)
 		return -1;
 
-	schedule->hold_flag = schedule->advance_flag = false;
+	schedule->hold_flag = schedule->override_flag
+		= schedule->advance_flag = false;
 
 	return 0;
 }
@@ -194,6 +251,9 @@ int
 ctrls_check(struct schedule_str *schedule)
 {
 	if (check_hold(schedule) == -1)
+		return -1;
+
+	if (check_override(schedule) == -1)
 		return -1;
 
 	if (check_advance(schedule) == -1)

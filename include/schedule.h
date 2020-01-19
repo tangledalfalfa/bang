@@ -16,10 +16,13 @@ struct schedule_str {
 
 	bool hold_flag;
 	double hold_temp_degc;
+	bool override_flag;
+	double override_temp_degc;
 	bool advance_flag;
-	/* control files: hold, advance, and resume */
+	/* control files: hold, override, advance, and resume */
 	const char *ctrl_dir;
 	time_t hold_mtime;
+	time_t override_mtime;
 	time_t advance_mtime;
 	time_t resume_mtime;
 

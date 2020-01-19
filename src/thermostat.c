@@ -232,7 +232,7 @@ log_data(const struct state_str *state, const struct schedule_str *schedule,
 		setpoint = state->setpoint_degc;
 	}
 
-	fprintf(out, "%7lu %10ld %9ld %s %7.4f %7.4f %4.1f %d %d %d\n",
+	fprintf(out, "%7lu %10ld %9ld %s %7.4f %7.4f %4.1f %d %d %d %d\n",
 		state->sequence,
 		state->timestamp.tv_sec,
 		state->timestamp.tv_nsec,
@@ -242,6 +242,7 @@ log_data(const struct state_str *state, const struct schedule_str *schedule,
 		setpoint,
 		state->heat_req,
 		schedule->hold_flag,
+		schedule->override_flag,
 		schedule->advance_flag);
 
 	if (out != stdout) {
