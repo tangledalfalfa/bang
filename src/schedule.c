@@ -81,9 +81,6 @@ sched_get_setpoint(time_t now_sse, struct schedule_str *schedule)
 	if (schedule->curr_idx == -1) {
 		/* initialize index */
 		init_index(now_sow, schedule);
-		/* cancel override, advance modes for new schedule */
-		schedule->override_flag = false;
-		schedule->advance_flag = false;
 	} else {
 		/* update index */
 		long t_0;	/* current time */

@@ -137,6 +137,10 @@ update_schedule(struct schedule_str *schedule)
 
 	schedule->curr_idx = -1; /* new schedule */
 
+	/* cancel override, advance modes for new schedule */
+	schedule->override_flag = false;
+	schedule->advance_flag = false;
+
 	return 0;
 }
 
