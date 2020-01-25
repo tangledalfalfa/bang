@@ -132,6 +132,12 @@ check_hold(struct schedule_str *schedule)
 		return -1;
 
 	schedule->hold_flag = true;
+	/*
+	 * schedule does not get checked in HOLD mode,
+	 * so reset curr_idx so that it will be re-initialized
+	 * upon HOLD mode exit
+	 */
+	schedule->curr_idx = -1;
 
 	syslog(LOG_INFO, "HOLD: %.2f", schedule->hold_temp_degc);
 
